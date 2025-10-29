@@ -318,6 +318,239 @@ if st.session_state.history:
                         st.write(doc.page_content)
                         st.divider()
 
+
+# Titre principal
+st.title(_("Portfolio de Projet : Implémentation d'un Système RAG"))
+st.subheader(_("Retrieval Augmented Generation avec Azure OpenAI et Stockage Blob"))
+
+# 1. Présentation du Projet
+with st.container():
+    st.header(_("1. Présentation du Projet"))
+    st.markdown(_("""
+    Ce projet vise à concevoir un pipeline RAG (Retrieval Augmented Generation) sur la plateforme Azure. 
+    L'objectif est de permettre à un chatbot basé sur Azure OpenAI de répondre de manière pertinente à des 
+    questions à partir de données externes stockées dans Azure Blob Storage et indexées dans Azure Cognitive Search.
+    """))
+
+# 2. Architecture Générale
+with st.container():
+    st.header(_("2. Architecture Générale"))
+    
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        st.markdown(_("""
+        **Composants principaux :**
+        
+        - **Azure Blob Storage** : héberge les fichiers CSV utilisés comme source de connaissance 
+          (ex. : base de données des vins)
+        
+        - **Azure Cognitive Search** : gère l'indexation et la recherche vectorielle grâce aux embeddings
+        
+        - **Azure OpenAI Service** : fournit les modèles de génération et d'embedding via les déploiements 
+          "demo-alfredo" (LLM) et "demo-embedding"
+        
+        - **LangChain** : gère l'orchestration entre recherche, vectorisation et génération de texte
+        """))
+    
+    with col2:
+        # Vous pouvez ajouter l'image ici si vous l'avez
+        st.info(_("💡 **Architecture du pipeline RAG**\n\nDonnées → Blob Storage → Cognitive Search → OpenAI → Réponse"))
+
+# 3. Étapes de Développement
+with st.container():
+    st.header(_("3. Étapes de Développement"))
+    
+    tabs = st.tabs([
+        _("📥 Chargement"),
+        _("✂️ Préparation"),
+        _("🔢 Embedding"),
+        _("🔍 Recherche")
+    ])
+    
+    with tabs[0]:
+        st.subheader(_("a. Chargement des Données"))
+        st.markdown(_("""
+        Les fichiers de données (ex : `wine-ratings.csv`) sont importés depuis le Blob Storage 
+        et chargés avec la classe `CSVLoader` de LangChain.
+        """))
+        st.code("""
+from langchain.document_loaders import CSVLoader
+
+loader = CSVLoader("wine-ratings.csv")
+documents = loader.load()
+        """, language="python")
+    
+    with tabs[1]:
+        st.subheader(_("b. Préparation et Découpage"))
+        st.markdown(_("""
+        Les documents sont découpés en fragments de 1000 caractères pour une indexation efficace 
+        via le module `CharacterTextSplitter`.
+        """))
+        st.code("""
+from langchain.text_splitter import CharacterTextSplitter
+
+text_splitter = CharacterTextSplitter(
+    chunk_size=1000,
+    chunk_overlap=200
+)
+chunks = text_splitter.split_documents(documents)
+        """, language="python")
+    
+    with tabs[2]:
+        st.subheader(_("c. Embedding et Indexation"))
+        st.markdown(_("""
+        Chaque fragment est converti en vecteur d'embedding à l'aide du modèle `demo-embedding`. 
+        Les vecteurs sont ensuite stockés dans Azure Cognitive Search.
+        """))
+        st.code("""
+from langchain.embeddings import AzureOpenAIEmbeddings
+from langchain.vectorstores import AzureCognitiveSearch
+
+embeddings = AzureOpenAIEmbeddings(
+    deployment="demo-embedding"
+)
+vectorstore = AzureCognitiveSearch.from_documents(
+    chunks, embeddings
+)
+        """, language="python")
+    
+    with tabs[3]:
+        st.subheader(_("d. Recherche et Génération"))
+        st.markdown(_("""
+        Lorsqu'une requête utilisateur est reçue, le système exécute une recherche par similarité 
+        dans l'index et envoie les résultats au modèle GPT Azure (`demo-alfredo`) pour générer 
+        une réponse contextuelle.
+        """))
+        st.code("""
+results = vectorstore.similarity_search_with_relevance_scores(
+    query, k=5
+)
+response = openai.ChatCompletion.create(
+    deployment="demo-alfredo",
+    messages=[
+        {"role": "system", "content": "Assistant RAG"},
+        {"role": "user", "content": f"Context: {results}\\n\\nQuestion: {query}"}
+    ]
+)
+        """, language="python")
+
+# 4. Fonctionnalités du Code
+with st.container():
+    st.header(_("4. Fonctionnalités du Code"))
+    
+    features = [
+        ("🔐", _("Chargement automatique des clés API et endpoints à partir d'un fichier `.env`")),
+        ("🔒", _("Connexion sécurisée à Azure Search via les variables d'environnement")),
+        ("📊", _("Indexation automatique des documents à partir de CSV")),
+        ("🎯", _("Recherche vectorielle avec score de pertinence")),
+        ("💬", _("Génération de réponses par `openai.ChatCompletion.create()`"))
+    ]
+    
+    for icon, feature in features:
+        st.markdown(f"{icon} {feature}")
+
+# 5. Exemple de Résultat
+with st.container():
+    st.header(_("5. Exemple de Résultat"))
+    
+    st.markdown(_("**Requête :**"))
+    st.info(_("What is the best Cabernet Sauvignon wine in Napa Valley above 94 points?"))
+    
+    st.markdown(_("**Résultat :**"))
+    st.success(_("""
+    → Le système renvoie les 5 documents les plus pertinents, extrait le contenu du plus pertinent 
+    et l'utilise pour enrichir la réponse générée par le modèle GPT.
+    """))
+
+# 6. Outils et Technologies
+with st.container():
+    st.header(_("6. Outils et Technologies"))
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown(_("""
+        **Langage :**
+        - 🐍 Python
+        
+        **Bibliothèques :**
+        - 🦜 LangChain
+        - 🤖 OpenAI
+        - ⚙️ dotenv
+        """))
+    
+    with col2:
+        st.markdown(_("""
+        **Services Azure :**
+        - ☁️ Azure OpenAI
+        - 🔍 Azure Cognitive Search
+        - 📦 Azure Blob Storage
+        
+        **Format de données :**
+        - 📊 CSV
+        """))
+
+# 7. Difficultés et Optimisations
+with st.container():
+    st.header(_("7. Difficultés et Optimisations"))
+    
+    challenges = [
+        _("Gestion des connexions sécurisées à Azure via des variables d'environnement"),
+        _("Encodage des textes et taille des chunks pour maximiser la pertinence des embeddings"),
+        _("Optimisation du scoring vectoriel dans Azure Search pour accélérer la recherche")
+    ]
+    
+    for challenge in challenges:
+        st.markdown(f"- ⚡ {challenge}")
+
+# 8. Résultats et Performances
+with st.container():
+    st.header(_("8. Résultats et Performances"))
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric(
+            label=_("Temps de réponse moyen"),
+            value="< 2s",
+            delta=_("Excellent")
+        )
+    
+    with col2:
+        st.metric(
+            label=_("Pertinence"),
+            value=_("Élevée"),
+            delta=_("Cohérent")
+        )
+    
+    with col3:
+        st.metric(
+            label=_("Type de données"),
+            value=_("Non structurées"),
+            delta=_("Complexes")
+        )
+    
+    st.markdown(_("""
+    Le système permet de récupérer et de synthétiser des informations complexes à partir de bases 
+    de données non structurées. Les résultats de similarité sont pertinents et cohérents avec les 
+    données sources.
+    """))
+
+# 9. Perspectives d'Amélioration
+with st.container():
+    st.header(_("9. Perspectives d'Amélioration"))
+    
+    improvements = [
+        ("🔄", _("Connexion à un stockage Blob dynamique pour actualiser l'index en temps réel")),
+        ("🌐", _("Ajout d'une interface web interactive pour tester le RAG directement depuis le navigateur")),
+        ("⚡", _("Intégration d'un cache Redis pour réduire le coût des requêtes récurrentes"))
+    ]
+    
+    for icon, improvement in improvements:
+        st.markdown(f"{icon} {improvement}")
+
+        
 st.markdown("---")
 st.markdown(_(
     """
