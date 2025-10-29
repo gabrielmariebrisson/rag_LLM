@@ -75,7 +75,6 @@ def load_vectorstore():
 
 try:
     vectorstore = load_vectorstore()
-    st.success(_("✅ Vectorstore chargé avec succès!"))
 except Exception as e:
     st.error(_(f"❌ Erreur lors du chargement du vectorstore: {e}"))
     st.stop()
@@ -90,7 +89,7 @@ def rag_query(query, k=5):
     context = "\n\n".join([doc.page_content for doc in results])
     
     messages = [
-        {"role": "system", "content": "You are a helpful assistant. Answer the question based on the provided context."},
+        {"role": "system", "content": "You are a helpful assistant. Write responses in complete, well-developed sentences. Express ideas clearly and naturally, avoiding overly brief or list-style answers."},
         {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {query}"}
     ]
     
@@ -237,12 +236,24 @@ if submit_button and query and query.strip():
         try:
             result = rag_query(query, k=num_results)
 
-            motif = r"array\(\['(.*?)'\],"
-            resultat = re.search(motif, result["response"])
+            motif_principal = r"array\(\['(.*?)'\],"
+            motif_secondaire = r"'text':\s*'([^']+)'"
 
+            resultat = re.search(motif_principal, result["response"])
+
+            if not resultat:
+                resultat = re.search(motif_secondaire, result["response"])
+
+            # Si on n’a trouvé aucun match, on prend directement la réponse brute
+            if resultat:
+                texte_reponse = resultat.group(1)
+            else:
+                texte_reponse = result["response"]
+
+            # Sauvegarde dans l’historique
             st.session_state.history.append({
                 "query": query,
-                "response": resultat.group(1),
+                "response": texte_reponse,
                 "retrieved_documents": result["retrieved_documents"]
             })
             
@@ -252,11 +263,8 @@ if submit_button and query and query.strip():
             st.success(_("✅ Réponse générée avec succès !"))
             st.subheader(_("💬 Réponse"))
 
-            motif = r"array\(\['(.*?)'\],"
+            st.markdown(f"**{_(texte_reponse, 'en')}**")
 
-            resultat = re.search(motif, result["response"])
-
-            st.markdown(f"**{_(resultat.group(1), 'en')}**")
 
         
         except ValueError as e:
