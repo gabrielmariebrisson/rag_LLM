@@ -204,7 +204,7 @@ with st.expander(_("💡 Exemples de questions du dataset SQuAD"), expanded=Fals
 
 default_query = st.session_state.get('selected_question', '')
 query = st.text_input(
-    _("Entrez votre question:"), 
+    _("Entrez votre question en anglais:"), 
     value=default_query,
     placeholder=_("Ex: What is the capital of France?"),
 )
