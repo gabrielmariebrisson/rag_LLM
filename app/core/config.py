@@ -10,11 +10,25 @@ class Settings(BaseSettings):
     MISTRAL_API_KEY: str
     MISTRAL_MODEL_NAME: str = "mistral-tiny-2407"
     
-    # FAISS Index
+    # FAISS Index (legacy, pour migration)
     FAISS_INDEX_DIR: str = "faiss_index"
     
-    # Embedding Model
+    # Embedding Model (legacy)
     EMBEDDING_MODEL_NAME: str = "sentence-transformers/all-MiniLM-L6-v2"
+    
+    # Qdrant Configuration
+    QDRANT_HOST: str = "localhost"
+    QDRANT_PORT: int = 6333
+    QDRANT_COLLECTION_NAME: str = "squad_collection"
+    
+    # Reranker Configuration
+    USE_RERANKER: bool = True
+    RERANKER_TOP_K: int = 20  # Nombre de docs avant reranking
+    
+    # Embedding Models
+    DENSE_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
+    SPARSE_MODEL: str = "prunebert-base-uncased-6-minilayer"
+    RERANKER_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     
     # Backend URL (pour le frontend)
     BACKEND_URL: str = "http://localhost:8000"

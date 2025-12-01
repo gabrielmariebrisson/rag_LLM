@@ -8,6 +8,7 @@ class ChatRequest(BaseModel):
     query: str = Field(..., description="La question de l'utilisateur")
     k: int = Field(default=5, ge=1, le=20, description="Nombre de documents à récupérer")
     language: str = Field(default="en", description="Langue cible de la réponse")
+    use_reranker: Optional[bool] = Field(default=None, description="Override pour activer/désactiver reranker (None = utilise config global)")
 
 
 class DocumentResponse(BaseModel):

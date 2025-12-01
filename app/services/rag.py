@@ -1,49 +1,90 @@
 """Service RAG : récupération de documents et génération de réponses."""
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from typing import List
+from typing import List, Optional
 from langchain_core.documents import Document
-from langchain_community.vectorstores.faiss import FAISS
 from mistralai import Mistral
 
 from app.core.config import Settings
 from app.core.prompts import SYSTEM_PROMPT, format_user_prompt
 from app.utils.text_processing import clean_response
+from app.vectorstores.qdrant_store import QdrantVectorStore
+from app.services.reranker import RerankerService
 
 
-# ThreadPoolExecutor pour exécuter les opérations CPU-bound
+# ThreadPoolExecutor pour les opérations CPU-bound (LLM)
 _executor = ThreadPoolExecutor(max_workers=4)
 
 
 async def retrieve_documents(
-    vectorstore: FAISS,
+    vectorstore: QdrantVectorStore,
     query: str,
-    k: int = 5
+    k: int = 5,
+    use_reranker: Optional[bool] = None,
+    reranker_service: Optional[RerankerService] = None,
+    config: Optional[Settings] = None
 ) -> List[Document]:
     """
-    Récupère les documents pertinents depuis le vectorstore.
+    Récupère les documents pertinents depuis Qdrant avec option de reranking.
     
-    Exécute similarity_search dans un executor pour ne pas bloquer l'event loop.
+    Pipeline: Hybrid Search (top 20) -> (optionnel) Reranking -> Top k
     
     Args:
-        vectorstore: Instance FAISS chargée
+        vectorstore: Instance QdrantVectorStore
         query: Question de l'utilisateur
-        k: Nombre de documents à récupérer
+        k: Nombre de documents finaux à retourner
+        use_reranker: Override pour activer/désactiver reranker (None = utilise config)
+        reranker_service: Service de reranking (requis si use_reranker=True)
+        config: Configuration (pour déterminer use_reranker si None)
         
     Returns:
-        Liste des documents récupérés
+        Liste des documents récupérés (format LangChain Document)
     """
-    loop = asyncio.get_event_loop()
+    # Déterminer si on utilise le reranker
+    if use_reranker is None:
+        if config is None:
+            use_reranker = False
+        else:
+            use_reranker = config.USE_RERANKER
     
-    # Exécuter similarity_search dans un thread séparé (CPU-bound)
-    results = await loop.run_in_executor(
-        _executor,
-        vectorstore.similarity_search,
-        query,
-        k
-    )
+    # Recherche hybride dans Qdrant (top 20 pour avoir assez de candidats)
+    top_k_search = config.RERANKER_TOP_K if config and use_reranker else k
+    search_results = await vectorstore.hybrid_search(query, top_k=top_k_search)
     
-    return results
+    # Si reranking activé, reranker les résultats
+    if use_reranker and reranker_service and len(search_results) > 0:
+        # Extraire les textes des documents
+        document_texts = [result["page_content"] for result in search_results]
+        
+        # Reranker
+        reranked = await reranker_service.rerank(query, document_texts, top_k=k)
+        
+        # Créer un mapping texte -> résultat original
+        text_to_result = {result["page_content"]: result for result in search_results}
+        
+        # Reconstruire les résultats rerankés
+        reranked_results = []
+        for doc_text, score in reranked:
+            if doc_text in text_to_result:
+                original_result = text_to_result[doc_text]
+                original_result["rerank_score"] = score
+                reranked_results.append(original_result)
+        
+        search_results = reranked_results[:k]
+    else:
+        # Prendre les top k sans reranking
+        search_results = search_results[:k]
+    
+    # Convertir en format LangChain Document
+    documents = []
+    for result in search_results:
+        doc = Document(
+            page_content=result["page_content"],
+            metadata=result["metadata"]
+        )
+        documents.append(doc)
+    
+    return documents
 
 
 async def generate_response(
@@ -91,4 +132,3 @@ async def generate_response(
     cleaned_response = clean_response(raw_response)
     
     return cleaned_response
-

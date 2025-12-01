@@ -2,56 +2,68 @@
 import time
 import os
 from contextlib import asynccontextmanager
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores.faiss import FAISS
 import pandas as pd
 
 from app.core.config import settings
 from app.schemas import ChatRequest, ChatResponse, DocumentResponse, ExampleResponse
 from app.services.rag import retrieve_documents, generate_response
 from app.services.translation import translate_text
+from app.services.embeddings import EmbeddingService
+from app.services.reranker import RerankerService
+from app.vectorstores.qdrant_store import QdrantVectorStore
 
 
-# Variable globale pour stocker le vectorstore
-vectorstore: Optional[FAISS] = None
+# Variables globales pour stocker les services
+vectorstore: Optional[QdrantVectorStore] = None
+embedding_service: Optional[EmbeddingService] = None
+reranker_service: Optional[RerankerService] = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Gestion du cycle de vie de l'application."""
-    global vectorstore
+    global vectorstore, embedding_service, reranker_service
     
-    # Startup: Charger le vectorstore FAISS
+    # Startup: Initialiser Qdrant et services
     try:
-        embeddings = HuggingFaceEmbeddings(
-            model_name=settings.EMBEDDING_MODEL_NAME
-        )
-        vectorstore = FAISS.load_local(
-            settings.FAISS_INDEX_DIR,
-            embeddings,
-            allow_dangerous_deserialization=True
-        )
-        print(f"✅ Vectorstore chargé depuis {settings.FAISS_INDEX_DIR}")
+        # Initialiser les services
+        embedding_service = EmbeddingService(settings)
+        reranker_service = RerankerService(settings)
+        
+        # Initialiser Qdrant
+        vectorstore = QdrantVectorStore(settings, embedding_service)
+        await vectorstore.connect()
+        
+        # Vérifier/créer la collection
+        await vectorstore.initialize_collection(dense_dim=384)  # 384 pour all-MiniLM-L6-v2
+        
+        print(f"✅ Qdrant connecté sur {settings.QDRANT_HOST}:{settings.QDRANT_PORT}")
+        print(f"✅ Collection '{settings.QDRANT_COLLECTION_NAME}' prête")
+        print(f"✅ Reranker: {'Activé' if settings.USE_RERANKER else 'Désactivé'}")
     except Exception as e:
-        print(f"❌ Erreur lors du chargement du vectorstore: {e}")
+        print(f"❌ Erreur lors de l'initialisation: {e}")
         raise
     
     yield
     
-    # Shutdown: Cleanup si nécessaire
+    # Shutdown: Cleanup
+    if vectorstore:
+        await vectorstore.disconnect()
     vectorstore = None
-    print("🔄 Vectorstore déchargé")
+    embedding_service = None
+    reranker_service = None
+    print("🔄 Services déchargés")
 
 
 # Créer l'application FastAPI
 app = FastAPI(
     title="RAG System API",
-    description="API pour le système RAG avec SQuAD dataset",
-    version="1.0.0",
+    description="API pour le système RAG avec SQuAD dataset (Qdrant + Hybrid Search + Reranking)",
+    version="2.0.0",
     lifespan=lifespan
 )
 
@@ -70,7 +82,11 @@ async def health_check():
     """Endpoint de santé."""
     return {
         "status": "healthy",
-        "vectorstore_loaded": vectorstore is not None
+        "vectorstore_loaded": vectorstore is not None,
+        "qdrant_host": settings.QDRANT_HOST,
+        "qdrant_port": settings.QDRANT_PORT,
+        "collection_name": settings.QDRANT_COLLECTION_NAME,
+        "reranker_enabled": settings.USE_RERANKER
     }
 
 
@@ -79,9 +95,9 @@ async def chat(request: ChatRequest):
     """
     Endpoint principal pour les requêtes RAG.
     
-    Orchestration: Retrieval -> Prompt Formatting -> LLM Call -> Text Cleaning -> Translation
+    Orchestration: Hybrid Search -> (optionnel) Reranking -> Prompt Formatting -> LLM Call -> Text Cleaning -> Translation
     """
-    if vectorstore is None:
+    if vectorstore is None or embedding_service is None:
         raise HTTPException(
             status_code=503,
             detail="Vectorstore not loaded. Please check server logs."
@@ -90,11 +106,14 @@ async def chat(request: ChatRequest):
     start_time = time.perf_counter()
     
     try:
-        # 1. Retrieval (via executor pour ne pas bloquer l'event loop)
+        # 1. Retrieval avec option de reranking
         retrieved_docs = await retrieve_documents(
             vectorstore,
             request.query,
-            request.k
+            request.k,
+            use_reranker=request.use_reranker,
+            reranker_service=reranker_service,
+            config=settings
         )
         
         # 2. Construire le contexte
@@ -170,4 +189,3 @@ async def get_examples():
     ]
     
     return ExampleResponse(examples=fallback_examples)
-
