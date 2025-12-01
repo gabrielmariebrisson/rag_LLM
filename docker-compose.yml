@@ -1,6 +1,19 @@
 version: '3.8'
 
 services:
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: jaeger
+    ports:
+      - "16686:16686"  # UI Jaeger
+      - "4317:4317"    # OTLP gRPC
+      - "4318:4318"    # OTLP HTTP
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    restart: unless-stopped
+    networks:
+      - rag-network
+
   vllm-service:
     image: vllm/vllm-openai:latest
     container_name: vllm-service
@@ -35,4 +48,10 @@ services:
       timeout: 10s
       retries: 3
       start_period: 120s
+    networks:
+      - rag-network
+
+networks:
+  rag-network:
+    driver: bridge
 

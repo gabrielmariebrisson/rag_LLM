@@ -8,7 +8,41 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 
+# OpenTelemetry
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
 from app.core.config import settings
+
+# Configuration OpenTelemetry
+resource = Resource.create({
+    "service.name": "rag-system",
+    "service.version": "2.0.0"
+})
+
+# Créer le provider de traces
+trace_provider = TracerProvider(resource=resource)
+
+# Exporter OTLP vers Jaeger
+jaeger_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
+otlp_exporter = OTLPSpanExporter(endpoint=jaeger_endpoint, insecure=True)
+span_processor = BatchSpanProcessor(otlp_exporter)
+trace_provider.add_span_processor(span_processor)
+
+# Optionnel: Exporter console pour debug (désactiver en production)
+# console_exporter = ConsoleSpanExporter()
+# console_processor = BatchSpanProcessor(console_exporter)
+# trace_provider.add_span_processor(console_processor)
+
+# Définir le provider global
+trace.set_tracer_provider(trace_provider)
+
+# Créer un tracer pour les spans manuels
+tracer = trace.get_tracer(__name__)
 from app.schemas import ChatRequest, ChatResponse, DocumentResponse, ExampleResponse
 from app.services.rag import retrieve_documents, generate_response
 from app.services.translation import translate_text
@@ -79,6 +113,9 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Instrumenter FastAPI avec OpenTelemetry
+FastAPIInstrumentor.instrument_app(app)
+
 # CORS middleware pour permettre les requêtes depuis le frontend
 app.add_middleware(
     CORSMiddleware,
@@ -117,61 +154,76 @@ async def chat(request: ChatRequest):
             detail="Services not loaded. Please check server logs."
         )
     
-    start_time = time.perf_counter()
-    
-    try:
-        # 1. Retrieval avec option de reranking
-        retrieved_docs = await retrieve_documents(
-            vectorstore,
-            request.query,
-            request.k,
-            use_reranker=request.use_reranker,
-            reranker_service=reranker_service,
-            config=settings
-        )
+    # Span racine pour la requête complète
+    with tracer.start_as_current_span("rag.request") as root_span:
+        root_span.set_attribute("http.method", "POST")
+        root_span.set_attribute("http.route", "/chat")
+        root_span.set_attribute("query", request.query)
+        root_span.set_attribute("k", request.k)
+        root_span.set_attribute("language", request.language)
+        root_span.set_attribute("use_reranker", request.use_reranker or False)
         
-        # 2. Construire le contexte
-        context = "\n\n".join([doc.page_content for doc in retrieved_docs])
+        start_time = time.perf_counter()
         
-        # 3. Génération de réponse (LLM + nettoyage)
-        response_text = await generate_response(
-            request.query,
-            context,
-            settings,
-            llm_client=llm_client
-        )
-        
-        # 4. Traduction si nécessaire
-        if request.language != "en":
-            response_text = translate_text(
-                response_text,
-                request.language,
-                source_lang="en"
+        try:
+            # 1. Retrieval avec option de reranking
+            retrieved_docs = await retrieve_documents(
+                vectorstore,
+                request.query,
+                request.k,
+                use_reranker=request.use_reranker,
+                reranker_service=reranker_service,
+                config=settings
             )
-        
-        # 5. Formater les documents pour la réponse
-        document_responses = [
-            DocumentResponse(
-                page_content=doc.page_content,
-                metadata=doc.metadata
+            
+            # 2. Construire le contexte
+            context = "\n\n".join([doc.page_content for doc in retrieved_docs])
+            
+            # 3. Génération de réponse (LLM + nettoyage)
+            response_text = await generate_response(
+                request.query,
+                context,
+                settings,
+                llm_client=llm_client
             )
-            for doc in retrieved_docs
-        ]
-        
-        processing_time = time.perf_counter() - start_time
-        
-        return ChatResponse(
-            response=response_text,
-            retrieved_documents=document_responses,
-            language=request.language,
-            processing_time=round(processing_time, 3)
-        )
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error processing request: {str(e)}"
-        )
+            
+            # 4. Traduction si nécessaire
+            if request.language != "en":
+                response_text = translate_text(
+                    response_text,
+                    request.language,
+                    source_lang="en"
+                )
+            
+            # 5. Formater les documents pour la réponse
+            document_responses = [
+                DocumentResponse(
+                    page_content=doc.page_content,
+                    metadata=doc.metadata
+                )
+                for doc in retrieved_docs
+            ]
+            
+            processing_time = time.perf_counter() - start_time
+            
+            root_span.set_attribute("processing_time_ms", round(processing_time * 1000, 2))
+            root_span.set_attribute("response_length", len(response_text))
+            root_span.set_status(trace.Status(trace.StatusCode.OK))
+            
+            return ChatResponse(
+                response=response_text,
+                retrieved_documents=document_responses,
+                language=request.language,
+                processing_time=round(processing_time, 3)
+            )
+            
+        except Exception as e:
+            root_span.set_status(trace.Status(trace.StatusCode.ERROR, str(e)))
+            root_span.record_exception(e)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error processing request: {str(e)}"
+            )
 
 
 @app.get("/examples", response_model=ExampleResponse)

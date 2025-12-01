@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-backend
+  labels:
+    app: rag-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: rag-backend
+  template:
+    metadata:
+      labels:
+        app: rag-backend
+    spec:
+      containers:
+      - name: backend
+        image: rag-backend:latest  # À construire et pousser dans votre registry
+        ports:
+        - containerPort: 8000
+          name: http
+        env:
+        # LLM Configuration
+        - name: LLM_BASE_URL
+          value: "http://vllm-service:8000/v1"
+        - name: LLM_API_KEY
+          value: "dummy-key"
+        - name: LLM_MODEL_NAME
+          value: "mistralai/Mistral-7B-Instruct-v0.2"
+        # Qdrant Configuration
+        - name: QDRANT_HOST
+          value: "qdrant-service"
+        - name: QDRANT_PORT
+          value: "6333"
+        - name: QDRANT_COLLECTION_NAME
+          value: "squad_collection"
+        # Reranker Configuration
+        - name: USE_RERANKER
+          value: "true"
+        - name: RERANKER_TOP_K
+          value: "20"
+        # OpenTelemetry Configuration
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://jaeger-service:4317"
+        - name: OTEL_SERVICE_NAME
+          value: "rag-system"
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: "service.name=rag-system,service.version=2.0.0"
+        # Mistral API (optionnel, pour fallback)
+        - name: MISTRAL_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: mistral-secret
+              key: api-key
+              optional: true
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "2Gi"
+          limits:
+            cpu: "2000m"
+            memory: "4Gi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-backend
+  labels:
+    app: rag-backend
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP
+    name: http
+  selector:
+    app: rag-backend
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mistral-secret
+type: Opaque
+stringData:
+  api-key: "your-mistral-api-key-here"  # À remplacer par votre vraie clé
+
