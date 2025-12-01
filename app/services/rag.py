@@ -3,13 +3,13 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Optional
 from langchain_core.documents import Document
-from mistralai import Mistral
 
 from app.core.config import Settings
 from app.core.prompts import SYSTEM_PROMPT, format_user_prompt
 from app.utils.text_processing import clean_response
 from app.vectorstores.qdrant_store import QdrantVectorStore
 from app.services.reranker import RerankerService
+from app.services.llm_client import LLMClient
 
 
 # ThreadPoolExecutor pour les opérations CPU-bound (LLM)
@@ -90,15 +90,17 @@ async def retrieve_documents(
 async def generate_response(
     query: str,
     context: str,
-    config: Settings
+    config: Settings,
+    llm_client: Optional[LLMClient] = None
 ) -> str:
     """
-    Génère une réponse via l'API Mistral.
+    Génère une réponse via le LLM configuré (agnostique : OpenAI, Mistral API, ou vLLM local).
     
     Args:
         query: Question de l'utilisateur
         context: Contexte récupéré depuis la base vectorielle
         config: Configuration de l'application
+        llm_client: Client LLM (créé automatiquement si None)
         
     Returns:
         Réponse générée et nettoyée
@@ -111,22 +113,21 @@ async def generate_response(
         {"role": "user", "content": user_prompt}
     ]
     
-    # Appel Mistral API (synchrone mais rapide)
-    # Si nécessaire, on peut aussi le mettre dans un executor
+    # Créer le client LLM si nécessaire
+    if llm_client is None:
+        llm_client = LLMClient(config)
+    
+    # Appel LLM (synchrone mais rapide, exécuté dans executor)
     loop = asyncio.get_event_loop()
     
-    def call_mistral():
-        with Mistral(api_key=config.MISTRAL_API_KEY) as mistral:
-            response = mistral.chat.complete(
-                model=config.MISTRAL_MODEL_NAME,
-                messages=messages,
-                stream=False
-            )
-            if not response.choices:
-                return ""
-            return response.choices[0].message.content
+    def call_llm():
+        return llm_client.generate(
+            messages=messages,
+            model=config.LLM_MODEL_NAME,
+            stream=False
+        )
     
-    raw_response = await loop.run_in_executor(_executor, call_mistral)
+    raw_response = await loop.run_in_executor(_executor, call_llm)
     
     # Nettoyer la réponse
     cleaned_response = clean_response(raw_response)

@@ -14,6 +14,7 @@ from app.services.rag import retrieve_documents, generate_response
 from app.services.translation import translate_text
 from app.services.embeddings import EmbeddingService
 from app.services.reranker import RerankerService
+from app.services.llm_client import LLMClient
 from app.vectorstores.qdrant_store import QdrantVectorStore
 
 
@@ -21,18 +22,20 @@ from app.vectorstores.qdrant_store import QdrantVectorStore
 vectorstore: Optional[QdrantVectorStore] = None
 embedding_service: Optional[EmbeddingService] = None
 reranker_service: Optional[RerankerService] = None
+llm_client: Optional[LLMClient] = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Gestion du cycle de vie de l'application."""
-    global vectorstore, embedding_service, reranker_service
+    global vectorstore, embedding_service, reranker_service, llm_client
     
     # Startup: Initialiser Qdrant et services
     try:
         # Initialiser les services
         embedding_service = EmbeddingService(settings)
         reranker_service = RerankerService(settings)
+        llm_client = LLMClient(settings)
         
         # Initialiser Qdrant
         vectorstore = QdrantVectorStore(settings, embedding_service)
@@ -44,6 +47,14 @@ async def lifespan(app: FastAPI):
         print(f"✅ Qdrant connecté sur {settings.QDRANT_HOST}:{settings.QDRANT_PORT}")
         print(f"✅ Collection '{settings.QDRANT_COLLECTION_NAME}' prête")
         print(f"✅ Reranker: {'Activé' if settings.USE_RERANKER else 'Désactivé'}")
+        
+        # Afficher la configuration LLM
+        if settings.LLM_BASE_URL:
+            print(f"✅ LLM: vLLM local sur {settings.LLM_BASE_URL}")
+        elif settings.LLM_API_KEY:
+            print(f"✅ LLM: OpenAI API (model: {settings.LLM_MODEL_NAME})")
+        elif settings.MISTRAL_API_KEY:
+            print(f"✅ LLM: Mistral API (model: {settings.LLM_MODEL_NAME})")
     except Exception as e:
         print(f"❌ Erreur lors de l'initialisation: {e}")
         raise
@@ -56,6 +67,7 @@ async def lifespan(app: FastAPI):
     vectorstore = None
     embedding_service = None
     reranker_service = None
+    llm_client = None
     print("🔄 Services déchargés")
 
 
@@ -86,7 +98,9 @@ async def health_check():
         "qdrant_host": settings.QDRANT_HOST,
         "qdrant_port": settings.QDRANT_PORT,
         "collection_name": settings.QDRANT_COLLECTION_NAME,
-        "reranker_enabled": settings.USE_RERANKER
+        "reranker_enabled": settings.USE_RERANKER,
+        "llm_base_url": settings.LLM_BASE_URL or "Mistral API (legacy)",
+        "llm_model": settings.LLM_MODEL_NAME
     }
 
 
@@ -97,10 +111,10 @@ async def chat(request: ChatRequest):
     
     Orchestration: Hybrid Search -> (optionnel) Reranking -> Prompt Formatting -> LLM Call -> Text Cleaning -> Translation
     """
-    if vectorstore is None or embedding_service is None:
+    if vectorstore is None or embedding_service is None or llm_client is None:
         raise HTTPException(
             status_code=503,
-            detail="Vectorstore not loaded. Please check server logs."
+            detail="Services not loaded. Please check server logs."
         )
     
     start_time = time.perf_counter()
@@ -123,7 +137,8 @@ async def chat(request: ChatRequest):
         response_text = await generate_response(
             request.query,
             context,
-            settings
+            settings,
+            llm_client=llm_client
         )
         
         # 4. Traduction si nécessaire
