@@ -20,3 +20,6 @@ venv/
 .vscode/
 
 squad_2.0/*
+
+
+qdrant_data/*
