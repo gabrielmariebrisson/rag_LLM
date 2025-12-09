@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     
     # Embedding Models
     DENSE_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
-    SPARSE_MODEL: str = "prunebert-base-uncased-6-minilayer"
+    SPARSE_MODEL: str = "bert-base-uncased"  # Modèle BERT standard pour embeddings sparse (SPLADE-like)
     RERANKER_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     
     # Backend URL (pour le frontend)

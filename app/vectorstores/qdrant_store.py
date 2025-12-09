@@ -9,7 +9,7 @@ from qdrant_client.models import (
     FieldCondition,
     MatchValue,
     SparseVectorParams,
-    SparseIndices,
+    SparseVector,
 )
 from qdrant_client.http import models
 
@@ -32,6 +32,7 @@ class QdrantVectorStore:
             self.client = AsyncQdrantClient(
                 host=self.config.QDRANT_HOST,
                 port=self.config.QDRANT_PORT,
+                check_compatibility=False,  # Désactiver le check de compatibilité pour Qdrant 1.11.0
             )
     
     async def disconnect(self):
@@ -58,6 +59,7 @@ class QdrantVectorStore:
             return
         
         # Créer la collection avec configuration hybride
+        # Pour Qdrant 1.11.0, utiliser des paramètres séparés pour dense et sparse
         await self.client.create_collection(
             collection_name=self.collection_name,
             vectors_config={
@@ -65,6 +67,8 @@ class QdrantVectorStore:
                     size=dense_dim,
                     distance=Distance.COSINE,
                 ),
+            },
+            sparse_vectors_config={
                 "sparse": SparseVectorParams(
                     index=models.SparseIndexParams()
                 )
@@ -96,7 +100,26 @@ class QdrantVectorStore:
         for i, (doc, dense_emb, sparse_emb, metadata) in enumerate(
             zip(documents, dense_embeddings, sparse_embeddings, metadatas)
         ):
-            point_id = ids[i] if ids else i
+            # Qdrant n'accepte que des entiers non signés ou des UUIDs
+            # Convertir l'ID en entier si c'est une chaîne
+            if ids and ids[i]:
+                id_str = str(ids[i])
+                try:
+                    # D'abord, vérifier si c'est une chaîne hexadécimale (commence souvent par des chiffres mais contient a-f)
+                    if isinstance(ids[i], str) and len(id_str) > 10 and any(c in "abcdefABCDEF" for c in id_str):
+                        # C'est probablement une chaîne hexadécimale
+                        point_id = int(id_str, 16) % (2**63)
+                    else:
+                        # Essayer de convertir en entier directement
+                        point_id = int(id_str)
+                        # S'assurer que c'est dans la plage valide pour Qdrant (0 à 2^63-1)
+                        if point_id < 0 or point_id >= 2**63:
+                            point_id = point_id % (2**63)
+                except (ValueError, TypeError):
+                    # Si la conversion échoue, utiliser un hash de la chaîne
+                    point_id = abs(hash(id_str)) % (2**63)  # Entier non signé 64 bits
+            else:
+                point_id = i
             
             # Convertir sparse dict en format Qdrant
             sparse_indices = list(sparse_emb.keys())
@@ -106,7 +129,7 @@ class QdrantVectorStore:
                 id=point_id,
                 vector={
                     "dense": dense_emb,
-                    "sparse": SparseIndices(
+                    "sparse": SparseVector(
                         indices=sparse_indices,
                         values=sparse_values
                     )
@@ -164,7 +187,7 @@ class QdrantVectorStore:
         # Recherche sparse
         sparse_results = await self.client.search(
             collection_name=self.collection_name,
-            query_vector=("sparse", SparseIndices(
+            query_vector=("sparse", SparseVector(
                 indices=sparse_indices,
                 values=sparse_values
             )),
