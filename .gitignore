@@ -68,5 +68,5 @@ qdrant.log
 
 
 .qdrant-initialized
-
+.env.backup
 data/raw/*
