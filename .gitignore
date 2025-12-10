@@ -68,3 +68,5 @@ qdrant.log
 
 
 .qdrant-initialized
+
+data/raw/*
