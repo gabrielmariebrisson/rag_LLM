@@ -27,13 +27,16 @@ QDRANT_COLLECTION_NAME=squad_collection
 
 # Configuration Reranker
 USE_RERANKER=true
-RERANKER_TOP_K=100
+RERANKER_TOP_K=10  # Optimal: même recall que 50, 7x plus rapide
 
 # Configuration Embeddings (utilise sentence-transformers pour BGE-M3)
 DENSE_MODEL=BAAI/bge-large-en-v1.5
 SPARSE_MODEL=prithivida/Splade_PP_en_v1
 RERANKER_MODEL=BAAI/bge-reranker-v2-m3
 DENSE_DIM=1024
+
+# Configuration GPU (utiliser GPU 1 si GPU 0 est saturé)
+CUDA_DEVICE_ID=1
 
 # Backend URL (pour le frontend)
 BACKEND_URL=http://localhost:8000
@@ -71,7 +74,7 @@ else
             echo "❌ vLLM n'a pas démarré dans les délais"
             exit 1
         fi
-        sleep 2
+        sleep 3
     done
 fi
 

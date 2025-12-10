@@ -1,15 +1,15 @@
 metric,value
-Recall@5 (Sans Reranker),0.62
-Recall@5 (Avec Reranker),0.62
+Recall@5 (Sans Reranker),0.92
+Recall@5 (Avec Reranker),0.92
 Amélioration Recall@5 (%),0.0
-Recall@10 (Sans Reranker),0.62
-Recall@10 (Avec Reranker),0.64
-Amélioration Recall@10 (%),3.23
-Latence moyenne sans reranker (ms),63.46
-Latence moyenne avec reranker (ms),82.24
-Overhead reranker (ms),18.78
-TTFT Moyenne (ms),8239.18
-TTFT P50 (ms),6681.78
-TTFT P95 (ms),14880.37
-TTFT Min (ms),4286.05
-TTFT Max (ms),14880.37
+Recall@10 (Sans Reranker),0.94
+Recall@10 (Avec Reranker),0.94
+Amélioration Recall@10 (%),0.0
+Latence moyenne sans reranker (ms),247.16
+Latence moyenne avec reranker (ms),415.24
+Overhead reranker (ms),168.09
+TTFT Moyenne (ms),64.55
+TTFT P50 (ms),29.64
+TTFT P95 (ms),241.09
+TTFT Min (ms),28.19
+TTFT Max (ms),241.09

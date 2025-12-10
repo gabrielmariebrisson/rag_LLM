@@ -1,7 +1,7 @@
 """Service de reranking avec CrossEncoder."""
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from sentence_transformers import CrossEncoder
 
 from app.core.config import Settings
@@ -14,9 +14,27 @@ _executor = ThreadPoolExecutor(max_workers=2)
 _reranker_model: CrossEncoder | None = None
 
 
-def _load_reranker_model(model_name: str) -> CrossEncoder:
+def _get_cuda_device(device_id: Optional[int] = None) -> str:
+    """Détermine le device CUDA à utiliser."""
+    import torch
+    if not torch.cuda.is_available():
+        return "cpu"
+    
+    if device_id is not None:
+        # Utiliser le GPU spécifié
+        if device_id >= torch.cuda.device_count():
+            print(f"⚠️ GPU {device_id} non disponible, utilisation du GPU 0")
+            return "cuda:0"
+        return f"cuda:{device_id}"
+    
+    # Par défaut, utiliser cuda:0
+    return "cuda:0"
+
+
+def _load_reranker_model(model_name: str, device_id: Optional[int] = None) -> CrossEncoder:
     """Charge le modèle CrossEncoder."""
-    return CrossEncoder(model_name)
+    device = _get_cuda_device(device_id)
+    return CrossEncoder(model_name, device=device)
 
 
 class RerankerService:
@@ -31,11 +49,18 @@ class RerankerService:
         global _reranker_model
         if _reranker_model is None:
             loop = asyncio.get_event_loop()
+            device_id = self.config.CUDA_DEVICE_ID
             _reranker_model = await loop.run_in_executor(
                 _executor,
                 _load_reranker_model,
-                self.config.RERANKER_MODEL
+                self.config.RERANKER_MODEL,
+                device_id
             )
+            # Afficher le device utilisé
+            import torch
+            if torch.cuda.is_available():
+                device = _get_cuda_device(device_id)
+                print(f"✅ Reranker chargé sur {device}")
         return _reranker_model
     
     async def rerank(

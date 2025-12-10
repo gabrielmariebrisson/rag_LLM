@@ -5,6 +5,7 @@ from typing import List, Optional, Dict, Any
 import numpy as np
 import hashlib
 import uuid
+import httpx
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import (
     Distance,
@@ -139,21 +140,77 @@ class QdrantVectorStore:
         # 2. Retrieval (x3 candidats pour déduplication)
         search_limit = top_k * 3
         
-        dense_results = await self.client.query_points(
-            collection_name=self.collection_name,
-            query=query_dense,
-            using="dense",
-            limit=search_limit,
-            with_payload=True
-        )
+        # Utiliser l'API REST directement pour compatibilité avec Qdrant 1.7.0
+        # Le client Python 1.16.1 n'est pas compatible avec query_points + using pour Qdrant 1.7.0
+        base_url = f"http://{self.config.QDRANT_HOST}:{self.config.QDRANT_PORT}"
+        
+        async with httpx.AsyncClient(timeout=120.0) as http_client:
+            # Recherche dense via API REST
+            dense_payload = {
+                "vector": {
+                    "name": "dense",
+                    "vector": query_dense
+                },
+                "limit": search_limit,
+                "with_payload": True
+            }
+            dense_response = await http_client.post(
+                f"{base_url}/collections/{self.collection_name}/points/search",
+                json=dense_payload
+            )
+            dense_response.raise_for_status()
+            dense_data = dense_response.json()
+            
+            # Créer un objet compatible avec QueryResponse
+            class SimplePoint:
+                def __init__(self, point_id, score, payload):
+                    self.id = point_id
+                    self.score = score
+                    self.payload = payload
+            
+            class SimpleQueryResponse:
+                def __init__(self, points):
+                    self.points = points
+            
+            dense_points = [
+                SimplePoint(
+                    point_id=item.get("id"),
+                    score=item.get("score", 0.0),
+                    payload=item.get("payload", {})
+                )
+                for item in dense_data.get("result", [])
+            ]
+            dense_results = SimpleQueryResponse(points=dense_points)
 
-        sparse_results = await self.client.query_points(
-            collection_name=self.collection_name,
-            query=SparseVector(indices=sparse_indices, values=sparse_values),
-            using="sparse",
-            limit=search_limit,
-            with_payload=True
-        )
+            # Recherche sparse via API REST
+            sparse_payload = {
+                "vector": {
+                    "name": "sparse",
+                    "vector": {
+                        "indices": sparse_indices,
+                        "values": sparse_values
+                    }
+                },
+                "limit": search_limit,
+                "with_payload": True
+            }
+            sparse_response = await http_client.post(
+                f"{base_url}/collections/{self.collection_name}/points/search",
+                json=sparse_payload
+            )
+            sparse_response.raise_for_status()
+            sparse_data = sparse_response.json()
+            
+            # Créer un objet compatible avec QueryResponse
+            sparse_points = [
+                SimplePoint(
+                    point_id=item.get("id"),
+                    score=item.get("score", 0.0),
+                    payload=item.get("payload", {})
+                )
+                for item in sparse_data.get("result", [])
+            ]
+            sparse_results = SimpleQueryResponse(points=sparse_points)
         
         # 3. RRF Fusion
         rrf_scores = {}

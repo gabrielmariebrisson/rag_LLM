@@ -8,6 +8,7 @@ import pandas as pd
 from tqdm import tqdm
 from dotenv import load_dotenv
 from typing import List, Dict
+import torch
 
 # Ajout du path pour les imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -37,7 +38,7 @@ def create_sentence_windows(text: str, window_size: int = 3) -> List[str]:
             windows.append(" ".join(window))
     return windows
 
-async def migrate_csv_to_qdrant(csv_path: str, batch_size: int = 32):
+async def migrate_csv_to_qdrant(csv_path: str, batch_size: int = 64):
     load_dotenv()
     config = Settings()
     
@@ -53,6 +54,37 @@ async def migrate_csv_to_qdrant(csv_path: str, batch_size: int = 32):
         print(f"❌ Erreur critique à l'initialisation : {e}")
         traceback.print_exc()
         return
+
+    print("🧪 Vérification de l'utilisation GPU...")
+    print(f"  - GPU disponible : {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        print(f"  - Nombre de GPUs : {torch.cuda.device_count()}")
+        for i in range(torch.cuda.device_count()):
+            print(f"  - GPU {i} : {torch.cuda.get_device_name(i)}")
+            props = torch.cuda.get_device_properties(i)
+            print(f"    Mémoire totale : {props.total_memory / 1e9:.2f} Go")
+    
+    # Précharger les modèles pour vérifier qu'ils sont sur GPU
+    print("\n🔄 Préchargement des modèles d'embeddings (vérification GPU)...")
+    try:
+        # Précharger le modèle dense
+        await embedding_service._ensure_dense_model()
+        dense_model = embedding_service.dense_model
+        if hasattr(dense_model, 'device'):
+            print(f"  ✅ Modèle Dense sur : {dense_model.device}")
+        else:
+            print(f"  ✅ Modèle Dense chargé (vérification device en cours...)")
+        
+        # Précharger le modèle sparse
+        await embedding_service._ensure_sparse_model()
+        sparse_model = embedding_service.sparse_model
+        if hasattr(sparse_model, 'device'):
+            print(f"  ✅ Modèle Sparse sur : {sparse_model.device}")
+        else:
+            print(f"  ✅ Modèle Sparse chargé (vérification device en cours...)")
+    except Exception as e:
+        print(f"  ⚠️  Erreur lors du préchargement : {e}")
+        print("     Le chargement se fera à la demande...")
 
     print(f"📖 Chargement du CSV: {csv_path}")
     df = pd.read_csv(csv_path)

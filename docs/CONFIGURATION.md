@@ -235,7 +235,7 @@ await vectorstore.initialize_collection(dense_dim=settings.DENSE_DIM)  # Utilise
 
 ## Configuration Embeddings
 
-**Note importante** : Les embeddings utilisent maintenant `fastembed` au lieu de `sentence-transformers` pour de meilleures performances et une utilisation mémoire réduite.
+**Note importante** : Les embeddings utilisent `sentence-transformers` avec support GPU optimisé (RTX 3090 et autres GPUs NVIDIA). Le système détecte automatiquement CUDA et charge les modèles sur GPU si disponible.
 
 ### Modèle Dense
 
@@ -245,11 +245,10 @@ await vectorstore.initialize_collection(dense_dim=settings.DENSE_DIM)  # Utilise
 
 **Modèles Recommandés** :
 
-| Modèle | Dimensions | Qualité | Vitesse | RAM Requise |
-|--------|-----------|---------|---------|-------------|
-| `BAAI/bge-large-en-v1.5` | 1024 | ⭐⭐⭐⭐⭐ | ⚡⚡⚡ | 2GB |
-| `BAAI/bge-large-en-v1.5` | 1024 | ⭐⭐⭐⭐⭐ | ⚡⚡ | 3GB |
-| `BAAI/bge-base-en-v1.5` | 768 | ⭐⭐⭐⭐ | ⚡⚡⚡ | 1.5GB |
+| Modèle | Dimensions | Qualité | Vitesse | RAM Requise | GPU Optimisé |
+|--------|-----------|---------|---------|-------------|--------------|
+| `BAAI/bge-large-en-v1.5` | 1024 | ⭐⭐⭐⭐⭐ | ⚡⚡⚡ | 2GB | ✅ Oui |
+| `BAAI/bge-base-en-v1.5` | 768 | ⭐⭐⭐⭐ | ⚡⚡⚡ | 1.5GB | ✅ Oui |
 
 **Exemple** :
 
@@ -259,9 +258,10 @@ DENSE_MODEL=BAAI/bge-large-en-v1.5
 
 **Notes** :
 - Plus de dimensions = meilleure qualité mais plus lent
-- La dimension est automatiquement détectée depuis le modèle (1024 pour BGE-M3)
+- La dimension est automatiquement détectée depuis le modèle (1024 pour BGE-large)
 - Le modèle est téléchargé automatiquement depuis HuggingFace au premier usage
-- `fastembed` gère automatiquement GPU/CPU
+- **GPU automatique** : Les modèles sont chargés directement sur CUDA si disponible (optimisé pour RTX 3090)
+- Fallback CPU si GPU non disponible
 
 ### Modèle Sparse
 
@@ -269,13 +269,14 @@ DENSE_MODEL=BAAI/bge-large-en-v1.5
 
 **Valeur par défaut** : `prithivida/Splade_PP_en_v1`
 
-**Fonction** : Génère des embeddings sparse (SPLADE) pour la recherche hybride via `fastembed.SparseTextEmbedding`.
+**Fonction** : Génère des embeddings sparse (SPLADE) pour la recherche hybride via `sentence-transformers.SparseEncoder`.
 
 **Notes** :
 - Modèle SPLADE optimisé pour la recherche sparse
 - Pas de dimensions fixes (vecteur sparse avec indices de vocabulaire)
-- Généralement plus rapide que dense sur CPU
-- Utilise `fastembed` pour un chargement et traitement optimisés
+- **GPU optimisé** : Utilise `SparseEncoder` avec support CUDA natif
+- Chargement automatique sur GPU si disponible (RTX 3090 et autres)
+- Utilise `sentence-transformers` pour un traitement optimisé GPU
 
 **Exemple** :
 
@@ -324,7 +325,7 @@ USE_RERANKER=true  # ou false
 **Exemple** :
 
 ```env
-RERANKER_TOP_K=100
+RERANKER_TOP_K=10  # Optimal: même recall que 50, 7x plus rapide
 ```
 
 ### Modèle Reranker
@@ -410,14 +411,41 @@ print(torch.cuda.is_available())  # True si GPU disponible
 
 ### Modèles Utilisant GPU
 
-1. **Embeddings Dense** : `fastembed.TextEmbedding` → GPU automatique (si disponible)
-2. **Embeddings Sparse** : `fastembed.SparseTextEmbedding` → GPU automatique (si disponible)
+1. **Embeddings Dense** : `SentenceTransformer` (sentence-transformers) → GPU automatique (si disponible, optimisé RTX 3090)
+2. **Embeddings Sparse** : `SparseEncoder` (sentence-transformers) → GPU automatique (si disponible, optimisé RTX 3090)
 3. **Reranker** : `CrossEncoder` (sentence-transformers) → GPU automatique (si disponible)
 4. **vLLM** : Requiert GPU explicitement
 
+**Vérification GPU** :
+```bash
+# Vérifier que les modèles sont sur GPU
+python scripts/check_gpu_models.py
+```
+
 ### Configuration Manuelle (Optionnel)
 
-Les modèles sont automatiquement déplacés sur GPU au chargement. Pas de configuration nécessaire dans `.env`.
+**Variable** : `CUDA_DEVICE_ID`
+
+**Valeur par défaut** : `None` (utilise `cuda:0` par défaut)
+
+**Description** : Permet de spécifier quel GPU utiliser pour les modèles d'embeddings et de reranking.
+
+**Exemples** :
+```env
+# Utiliser le GPU 0 (défaut)
+CUDA_DEVICE_ID=0
+
+# Utiliser le GPU 1 (utile si GPU 0 est saturé)
+CUDA_DEVICE_ID=1
+
+# Auto (utilise GPU 0)
+CUDA_DEVICE_ID=
+```
+
+**Cas d'usage** :
+- Si vous avez plusieurs GPUs et que le GPU 0 est utilisé par vLLM ou d'autres processus
+- Pour équilibrer la charge entre plusieurs GPUs
+- Pour éviter les erreurs "CUDA out of memory" en utilisant un GPU moins chargé
 
 ### Vérification
 
@@ -630,7 +658,7 @@ QDRANT_HOST=your-cluster.qdrant.io
 QDRANT_PORT=6333
 QDRANT_API_KEY=your-key
 USE_RERANKER=true
-RERANKER_TOP_K=100
+RERANKER_TOP_K=10  # Optimal: même recall que 50, 7x plus rapide
 ENABLE_JAEGER_EXPORT=false
 ```
 
@@ -643,7 +671,7 @@ HUGGING_FACE_HUB_TOKEN=hf_xxxxxxxxxxxxx  # Requis pour télécharger les modèle
 QDRANT_HOST=localhost
 QDRANT_PORT=6333
 USE_RERANKER=true
-RERANKER_TOP_K=100
+RERANKER_TOP_K=10  # Optimal: même recall que 50, 7x plus rapide
 ENABLE_JAEGER_EXPORT=true
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 ```

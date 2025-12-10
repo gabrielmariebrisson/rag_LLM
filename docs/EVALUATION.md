@@ -433,7 +433,7 @@ RERANKER_MODEL=BAAI/bge-reranker-v2-m3
 
 ```env
 # Plus de candidats avant reranking
-RERANKER_TOP_K=50  # Au lieu de 20
+RERANKER_TOP_K=10  # Optimal: même recall que 50, 7x plus rapide
 ```
 
 #### 3. Optimiser Qdrant

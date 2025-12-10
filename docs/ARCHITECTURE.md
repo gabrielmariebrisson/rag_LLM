@@ -235,8 +235,8 @@ Requête Utilisateur
         ▼
 ┌───────────────────┐
 │  1. Embedding     │  Génération embeddings hybrides (dense + sparse)
-│     Query         │  - Dense: fastembed (BGE-M3, 1024 dimensions)
-└────────┬──────────┘  - Sparse: fastembed SPLADE (prithivida/Splade_PP_en_v1)
+│     Query         │  - Dense: SentenceTransformer (BGE-large, 1024 dimensions, GPU optimisé)
+└────────┬──────────┘  - Sparse: SparseEncoder SPLADE (prithivida/Splade_PP_en_v1, GPU optimisé)
          │
          ▼
 ┌───────────────────┐
@@ -288,13 +288,14 @@ Requête Utilisateur
 **Composant** : `EmbeddingService`
 
 **Traitement** :
-- Génère un embedding dense via fastembed (BGE-M3, 1024 dimensions)
-- Génère un embedding sparse via fastembed SPLADE (indices de mots importants)
+- Génère un embedding dense via `SentenceTransformer` (BGE-large, 1024 dimensions, GPU optimisé)
+- Génère un embedding sparse via `SparseEncoder` SPLADE (indices de mots importants, GPU optimisé)
 - Les deux embeddings sont utilisés pour la recherche hybride
+- Les modèles sont automatiquement chargés sur GPU (CUDA) si disponible (optimisé RTX 3090)
 
 **Performance** :
-- Dense : ~10-50ms (selon modèle et GPU)
-- Sparse : ~20-100ms (selon modèle et GPU)
+- Dense : ~5-20ms sur GPU RTX 3090 (vs ~50-200ms sur CPU)
+- Sparse : ~10-40ms sur GPU RTX 3090 (vs ~100-400ms sur CPU)
 
 #### 2. Hybrid Search (Qdrant)
 
@@ -385,8 +386,8 @@ Question: {query}"
 **Responsabilité** : Génération d'embeddings hybrides (dense + sparse)
 
 **Modèles** :
-- **Dense** : fastembed (BAAI/bge-large-en-v1.5 par défaut, 1024 dimensions)
-- **Sparse** : fastembed (prithivida/Splade_PP_en_v1 par défaut)
+- **Dense** : SentenceTransformer (BAAI/bge-large-en-v1.5 par défaut, 1024 dimensions, GPU optimisé)
+- **Sparse** : SparseEncoder (prithivida/Splade_PP_en_v1 par défaut, GPU optimisé)
 
 **Méthodes** :
 - `embed_hybrid(texts: List[str]) -> Tuple[List[np.ndarray], List[dict]]`

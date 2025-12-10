@@ -30,8 +30,8 @@ class Settings(BaseSettings):
         QDRANT_COLLECTION_NAME (str): Nom de la collection Qdrant
         USE_RERANKER (bool): Activer/désactiver le reranking
         RERANKER_TOP_K (int): Nombre de documents avant reranking
-        DENSE_MODEL (str): Modèle dense pour embeddings (fastembed)
-        SPARSE_MODEL (str): Modèle sparse pour embeddings (fastembed SPLADE)
+        DENSE_MODEL (str): Modèle dense pour embeddings (SentenceTransformer, GPU optimisé)
+        SPARSE_MODEL (str): Modèle sparse pour embeddings (SparseEncoder SPLADE, GPU optimisé)
         RERANKER_MODEL (str): Modèle Cross-Encoder pour reranking
         DENSE_DIM (int): Dimension des embeddings denses
         BACKEND_URL (str): URL du backend FastAPI (pour le frontend)
@@ -65,7 +65,7 @@ class Settings(BaseSettings):
     
     # Reranker Configuration
     USE_RERANKER: bool = True
-    RERANKER_TOP_K: int = 100  # Nombre de docs avant reranking
+    RERANKER_TOP_K: int = 10  # Nombre de docs avant reranking (optimal: 10 = même recall que 50, 7x plus rapide)
     
     # Embedding Models
     DENSE_MODEL: str = "BAAI/bge-large-en-v1.5"
@@ -80,6 +80,9 @@ class Settings(BaseSettings):
     
     # HuggingFace Hub Token (pour télécharger les modèles)
     HUGGING_FACE_HUB_TOKEN: Optional[str] = None
+    
+    # GPU Configuration
+    CUDA_DEVICE_ID: Optional[int] = None  # None = auto (cuda:0), 0 = cuda:0, 1 = cuda:1, etc.
     
     model_config = SettingsConfigDict(
         env_file=".env",

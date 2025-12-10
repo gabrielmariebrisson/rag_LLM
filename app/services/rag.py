@@ -219,4 +219,28 @@ async def generate_response(
         # Nettoyer la réponse
         cleaned_response = clean_response(raw_response)
         
+        # Si la réponse est vide après nettoyage, retourner ''
+        if not cleaned_response or not cleaned_response.strip():
+            return ""
+        
+        # Détecter si la réponse indique que l'information n'est pas dans le contexte
+        # Le prompt demande au LLM de répondre "NO_CONTEXT" si l'info n'est pas dans les documents
+        cleaned_lower = cleaned_response.lower().strip()
+        
+        # Indicateurs que la réponse n'est pas dans les documents
+        no_context_indicators = [
+            "no_context",
+            "no context",
+            "the context does not contain",
+            "the context does not have",
+            "cannot be answered from the context",
+            "not in the context",
+            "not found in the context"
+        ]
+        
+        # Si la réponse contient un indicateur de "pas de contexte", retourner ''
+        for indicator in no_context_indicators:
+            if indicator in cleaned_lower:
+                return ""
+        
         return cleaned_response

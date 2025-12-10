@@ -22,7 +22,7 @@ MODEL="casperhansen/llama-3-8b-instruct-awq"
 QUANTIZATION="awq"
 DTYPE="float16"
 MAX_MODEL_LEN="4096"
-GPU_MEMORY_UTIL="0.95"
+GPU_MEMORY_UTIL="0.8" 
 PORT="8002"
 HOST="0.0.0.0"
 

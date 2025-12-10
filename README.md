@@ -98,7 +98,7 @@ rag_LLM/
 1. **Frontend (Streamlit)** : Interface utilisateur web
 2. **Backend (FastAPI)** : API REST et orchestration du pipeline RAG
 3. **Qdrant** : Base de données vectorielle pour la recherche hybride
-4. **Embedding Service** : Génération d'embeddings dense (fastembed BGE-M3, 1024 dimensions) et sparse (fastembed SPLADE)
+4. **Embedding Service** : Génération d'embeddings dense (SentenceTransformer BGE-large, 1024 dimensions, GPU optimisé) et sparse (SparseEncoder SPLADE, GPU optimisé)
 5. **Reranker** : Modèle BGE-reranker-v2-m3 (Cross-Encoder SOTA) pour réordonner les résultats
 6. **LLM Client** : Client agnostique supportant vLLM, OpenAI, et Mistral
 7. **vLLM Service** (optionnel) : Serveur d'inférence local pour latence optimale
@@ -226,7 +226,7 @@ QDRANT_COLLECTION_NAME=squad_collection
 
 ```env
 USE_RERANKER=true
-RERANKER_TOP_K=100
+RERANKER_TOP_K=10  # Optimal: même recall que 50, 7x plus rapide
 ```
 
 ## 🚀 Démarrage
