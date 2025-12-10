@@ -47,7 +47,7 @@ ERROR: Could not find a version that satisfies the requirement torch>=2.9.0
 3. **Installer les dépendances par groupes** :
    ```bash
    pip install fastapi uvicorn pydantic
-   pip install sentence-transformers transformers
+   pip install fastembed sentence-transformers transformers
    pip install qdrant-client
    # etc.
    ```
@@ -532,7 +532,7 @@ MemoryError: Unable to allocate array
 
 3. **Utiliser un modèle plus petit** :
    ```env
-   DENSE_MODEL=sentence-transformers/all-MiniLM-L6-v2  # Au lieu de all-mpnet-base-v2
+   DENSE_MODEL=BAAI/bge-base-en-v1.5  # 768 dimensions au lieu de BGE-M3 (1024)
    ```
 
 ---

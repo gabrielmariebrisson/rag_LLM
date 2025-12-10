@@ -59,7 +59,7 @@ Endpoint de santé de l'application.
   "collection_name": "squad_collection",
   "reranker_enabled": true,
   "llm_base_url": "http://localhost:8001/v1",
-  "llm_model": "TheBloke/Mistral-7B-Instruct-v0.2-AWQ"
+  "llm_model": "casperhansen/llama-3-8b-instruct-awq"
 }
 ```
 

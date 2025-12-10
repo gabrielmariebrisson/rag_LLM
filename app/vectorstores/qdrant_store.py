@@ -1,27 +1,17 @@
 """
 Wrapper Qdrant pour recherche vectorielle hybride.
-
-Ce module implémente un wrapper autour d'AsyncQdrantClient pour :
-- Recherche hybride (dense + sparse vectors) avec fusion RRF
-- Gestion des collections Qdrant
-- Ajout et récupération de documents avec embeddings hybrides
-
-La recherche hybride combine :
-- Dense vectors : Embeddings sémantiques (sentence-transformers)
-- Sparse vectors : Embeddings basés sur les mots-clés (BERT-based SPLADE-like)
 """
 from typing import List, Optional, Dict, Any
 import numpy as np
+import hashlib
+import uuid
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import (
     Distance,
     VectorParams,
     PointStruct,
-    Filter,
     SparseVectorParams,
     SparseVector,
-    NamedVector,        # Import nécessaire
-    NamedSparseVector,  # Import nécessaire
 )
 from qdrant_client.http import models
 
@@ -30,49 +20,14 @@ from app.services.embeddings import EmbeddingService
 
 
 class QdrantVectorStore:
-    """
-    Wrapper pour Qdrant avec support recherche hybride (dense + sparse).
-    
-    Cette classe gère la connexion à Qdrant, la création de collections,
-    l'ajout de documents avec embeddings hybrides, et la recherche hybride
-    avec fusion RRF (Reciprocal Rank Fusion).
-    
-    Attributes:
-        config (Settings): Configuration de l'application.
-        embedding_service (EmbeddingService): Service pour générer les embeddings.
-        client (Optional[AsyncQdrantClient]): Client Qdrant asynchrone.
-        collection_name (str): Nom de la collection Qdrant.
-        
-    Notes:
-        - La collection utilise deux types de vecteurs : "dense" et "sparse"
-        - La recherche hybride combine les résultats dense et sparse avec RRF
-        - Les dimensions du vecteur dense dépendent du modèle (défaut: 384 pour all-MiniLM-L6-v2)
-    """
     
     def __init__(self, config: Settings, embedding_service: EmbeddingService):
-        """
-        Initialise le QdrantVectorStore.
-        
-        Args:
-            config: Configuration de l'application contenant les paramètres Qdrant.
-            embedding_service: Service pour générer les embeddings dense et sparse.
-        """
         self.config = config
         self.embedding_service = embedding_service
         self.client: Optional[AsyncQdrantClient] = None
         self.collection_name = config.QDRANT_COLLECTION_NAME
     
     async def connect(self):
-        """
-        Établit la connexion avec Qdrant.
-        
-        Crée un client AsyncQdrantClient si aucune connexion n'existe.
-        Ne fait rien si la connexion existe déjà.
-        
-        Notes:
-            - Le timeout est fixé à 120 secondes
-            - check_compatibility est désactivé pour éviter les warnings
-        """
         if self.client is None:
             self.client = AsyncQdrantClient(
                 host=self.config.QDRANT_HOST,
@@ -82,82 +37,57 @@ class QdrantVectorStore:
             )
     
     async def disconnect(self):
-        """
-        Ferme la connexion avec Qdrant.
-        
-        Ferme le client et réinitialise self.client à None.
-        Appelé lors du shutdown de l'application.
-        """
         if self.client:
             await self.client.close()
             self.client = None
     
-    async def initialize_collection(self, dense_dim: int = 384):
-        """
-        Initialise la collection Qdrant avec configuration hybride.
-        
-        Crée la collection si elle n'existe pas avec :
-        - Vecteurs dense : dimensions spécifiées, distance COSINE
-        - Vecteurs sparse : configuration par défaut Qdrant
-        
-        Args:
-            dense_dim: Dimensions du vecteur dense (défaut: 384 pour all-MiniLM-L6-v2).
-                Doit correspondre aux dimensions du modèle DENSE_MODEL configuré.
-                
-        Notes:
-            - Si la collection existe déjà, ne fait rien
-            - La distance utilisée est COSINE pour les vecteurs dense
-            - Les vecteurs sparse utilisent la configuration par défaut de Qdrant
-        """
+    async def initialize_collection(self, dense_dim: Optional[int] = None):
         await self.connect()
-        
         collections = await self.client.get_collections()
-        collection_names = [col.name for col in collections.collections]
-        
-        if self.collection_name in collection_names:
-            print(f"✅ Collection '{self.collection_name}' existe déjà")
+        if self.collection_name in [col.name for col in collections.collections]:
             return
+        
+        # Utiliser DENSE_DIM depuis config si dense_dim n'est pas fourni
+        if dense_dim is None:
+            dense_dim = self.config.DENSE_DIM
         
         await self.client.create_collection(
             collection_name=self.collection_name,
-            vectors_config={
-                "dense": VectorParams(
-                    size=dense_dim,
-                    distance=Distance.COSINE,
-                ),
-            },
-            sparse_vectors_config={
-                "sparse": SparseVectorParams(
-                    index=models.SparseIndexParams()
-                )
-            }
+            vectors_config={"dense": VectorParams(size=dense_dim, distance=Distance.COSINE)},
+            sparse_vectors_config={"sparse": SparseVectorParams(index=models.SparseIndexParams())}
         )
-        print(f"✅ Collection '{self.collection_name}' créée avec recherche hybride")
     
+    def _validate_id(self, id_val: Any) -> Any:
+        """
+        Valide l'ID pour Qdrant.
+        Qdrant accepte: int (unsigned 64bit) OU str (UUID format).
+        """
+        # 1. Si c'est déjà un int, c'est bon
+        if isinstance(id_val, int):
+            return id_val
+            
+        # 2. Si c'est une string, on vérifie si c'est un UUID valide
+        if isinstance(id_val, str):
+            try:
+                uuid.UUID(id_val)
+                return id_val # C'est un UUID valide, on garde la string
+            except ValueError:
+                pass # Ce n'est pas un UUID
+                
+            # 3. Si c'est une string numérique ("123"), on convertit en int
+            if id_val.isdigit():
+                return int(id_val)
+        
+        # 4. Fallback ultime : On hash en entier déterministe
+        # (Pour gérer les vieux IDs ou les formats exotiques)
+        return int(hashlib.md5(str(id_val).encode()).hexdigest(), 16) % (2**63)
+
     async def add_documents(
         self,
         documents: List[str],
         metadatas: List[Dict[str, Any]],
         ids: Optional[List[str]] = None
     ):
-        """
-        Ajoute des documents à la collection Qdrant.
-        
-        Génère les embeddings hybrides (dense + sparse) pour chaque document
-        et les insère dans Qdrant avec leurs métadonnées.
-        
-        Args:
-            documents: Liste des textes de documents à ajouter.
-            metadatas: Liste des métadonnées correspondantes (même longueur que documents).
-            ids: IDs optionnels pour les documents. Si None, génère des IDs automatiquement.
-                Defaults to None.
-                
-        Notes:
-            - Les embeddings sont générés via embedding_service.embed_hybrid()
-            - Les IDs sont convertis en entiers si possible, sinon hashés
-            - Utilise upsert() donc les documents existants sont mis à jour
-            - Les métadonnées sont stockées dans le payload de chaque point
-        """
         await self.connect()
         
         dense_embeddings, sparse_embeddings = await self.embedding_service.embed_hybrid(documents)
@@ -166,11 +96,10 @@ class QdrantVectorStore:
         for i, (doc, dense_emb, sparse_emb, metadata) in enumerate(
             zip(documents, dense_embeddings, sparse_embeddings, metadatas)
         ):
-            try:
-                raw_id = ids[i] if ids and i < len(ids) else str(i)
-                point_id = int(raw_id) if str(raw_id).isdigit() else abs(hash(str(raw_id))) % (2**63)
-            except Exception:
-                point_id = i
+            raw_id = ids[i] if ids and i < len(ids) else str(i)
+            
+            # Utilisation de la validation robuste
+            point_id = self._validate_id(raw_id)
             
             if isinstance(dense_emb, np.ndarray):
                 dense_vec = dense_emb.tolist()
@@ -181,127 +110,96 @@ class QdrantVectorStore:
             sparse_values = [float(val) for val in sparse_emb.values()]
             if not sparse_indices: sparse_indices, sparse_values = [0], [0.0]
 
-            point = PointStruct(
+            points.append(PointStruct(
                 id=point_id,
                 vector={
                     "dense": dense_vec,
                     "sparse": SparseVector(indices=sparse_indices, values=sparse_values)
                 },
                 payload=metadata
-            )
-            points.append(point)
+            ))
         
         if points:
             await self.client.upsert(collection_name=self.collection_name, points=points)
 
-    async def hybrid_search(
-        self,
-        query: str,
-        top_k: int = 20
-    ) -> List[Dict[str, Any]]:
-        """
-        Effectue une recherche hybride (dense + sparse) avec fusion RRF.
-        
-        Pipeline de recherche :
-        1. Génère les embeddings hybrides pour la requête
-        2. Recherche dense dans Qdrant (top_k * 2 candidats)
-        3. Recherche sparse dans Qdrant (top_k * 2 candidats)
-        4. Fusionne les résultats avec RRF (Reciprocal Rank Fusion)
-        5. Retourne les top_k résultats les plus pertinents
-        
-        Args:
-            query: Requête textuelle à rechercher.
-            top_k: Nombre de résultats à retourner. Defaults to 20.
-            
-        Returns:
-            List[Dict[str, Any]]: Liste des résultats, chacun contenant :
-                - id: ID du point dans Qdrant
-                - score: Score RRF calculé
-                - page_content: Contenu du document (depuis payload)
-                - metadata: Métadonnées du document (payload sans page_content)
-                - payload: Payload complet depuis Qdrant
-                
-        Notes:
-            - RRF combine les rangs des résultats dense et sparse : score = 1/(k + rank)
-            - k_param = 60 pour le calcul RRF (bon compromis selon la littérature)
-            - Les recherches dense et sparse retournent top_k * 2 candidats chacune
-            - Les résultats sont triés par score RRF décroissant
-            
-        Example:
-            >>> results = await vectorstore.hybrid_search("What is photosynthesis?", top_k=5)
-            >>> print(f"Found {len(results)} results")
-            >>> print(results[0]["page_content"][:100])  # Premier résultat
-        """
+    async def hybrid_search(self, query: str, top_k: int = 20) -> List[Dict[str, Any]]:
         await self.connect()
         
-        # 1. Encodage
+        # 1. Embeddings
         dense_embeddings, sparse_embeddings = await self.embedding_service.embed_hybrid([query])
         query_dense = dense_embeddings[0]
-        query_sparse = sparse_embeddings[0]
+        if isinstance(query_dense, np.ndarray): query_dense = query_dense.tolist()
         
-        # Préparation sparse
-        sparse_indices = list(query_sparse.keys())
-        sparse_values = list(query_sparse.values())
+        query_sparse = sparse_embeddings[0]
+        # Convertir les clés en int (Qdrant attend des indices entiers)
+        sparse_indices = [int(idx) for idx in query_sparse.keys()]
+        sparse_values = [float(val) for val in query_sparse.values()]
         if not sparse_indices: sparse_indices, sparse_values = [0], [0.0]
         
-        # Conversion dense
-        if isinstance(query_dense, np.ndarray):
-            query_dense = query_dense.tolist()
+        # 2. Retrieval (x3 candidats pour déduplication)
+        search_limit = top_k * 3
         
-        # 2. Recherche DENSE
         dense_results = await self.client.query_points(
             collection_name=self.collection_name,
             query=query_dense,
             using="dense",
-            limit=top_k * 2,
+            limit=search_limit,
             with_payload=True
         )
 
-
-        # 3. Recherche SPARSE
         sparse_results = await self.client.query_points(
             collection_name=self.collection_name,
-            query=SparseVector(
-                indices=sparse_indices,
-                values=sparse_values
-            ),
-            using="sparse",  # <-- OBLIGATOIRE !
-            limit=top_k * 2,
+            query=SparseVector(indices=sparse_indices, values=sparse_values),
+            using="sparse",
+            limit=search_limit,
             with_payload=True
         )
         
-        # 4. Fusion RRF
+        # 3. RRF Fusion
         rrf_scores = {}
         k_param = 60
         
-        # CORRECTION : Accéder aux résultats via '.points'
+        # On utilise .points car query_points retourne un objet QueryResponse
         for rank, result in enumerate(dense_results.points, 1):
             rrf_scores[result.id] = rrf_scores.get(result.id, 0) + (1.0 / (k_param + rank))
         
         for rank, result in enumerate(sparse_results.points, 1):
             rrf_scores[result.id] = rrf_scores.get(result.id, 0) + (1.0 / (k_param + rank))
         
-        # Consolidation
+        # 4. Déduplication
         all_results_map = {res.id: res for res in list(dense_results.points) + list(sparse_results.points)}
+        sorted_candidates = sorted(rrf_scores.items(), key=lambda item: item[1], reverse=True)
         
-        # Tri
-        sorted_results = sorted(
-            rrf_scores.items(),
-            key=lambda item: item[1],
-            reverse=True
-        )[:top_k]
-        
-        # Formatage
         final_results = []
-        for point_id, score in sorted_results:
+        seen_hashes = set()
+        
+        for point_id, score in sorted_candidates:
             point = all_results_map.get(point_id)
-            if point:
-                final_results.append({
-                    "id": point.id,
-                    "score": score,
-                    "payload": point.payload,
-                    "page_content": point.payload.get("page_content", "") if point.payload else "",
-                    "metadata": {k: v for k, v in point.payload.items() if k != "page_content"} if point.payload else {}
-                })
+            if not point or not point.payload: continue
+                
+            # Récupération du hash pour déduplication
+            # On utilise 'content_hash' s'il existe (mis par le script de migration)
+            # Sinon on le recalcule sur le champ text/context
+            content = point.payload.get("context") or point.payload.get("text") or point.payload.get("page_content", "")
+            doc_hash = point.payload.get("content_hash")
+            
+            if not doc_hash:
+                doc_hash = hashlib.md5(content.encode('utf-8')).hexdigest()
+            
+            if doc_hash in seen_hashes:
+                continue
+            
+            seen_hashes.add(doc_hash)
+            
+            final_results.append({
+                "id": point.id,
+                "score": score,
+                "payload": point.payload,
+                "page_content": content,
+                "metadata": point.payload
+            })
+            
+            if len(final_results) >= top_k:
+                break
         
         return final_results

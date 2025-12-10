@@ -69,7 +69,7 @@ Dans un terminal séparé :
 ```bash
 # Configuration environnement
 export LLM_BASE_URL=http://localhost:8001/v1
-export LLM_MODEL_NAME=TheBloke/Mistral-7B-Instruct-v0.2-AWQ
+export LLM_MODEL_NAME=casperhansen/llama-3-8b-instruct-awq
 
 # Démarrer le backend
 uvicorn app.main:app --host 0.0.0.0 --port 8000
@@ -416,7 +416,7 @@ spec:
 ```env
 # LLM
 LLM_BASE_URL=http://vllm-service:8000/v1
-LLM_MODEL_NAME=TheBloke/Mistral-7B-Instruct-v0.2-AWQ
+LLM_MODEL_NAME=casperhansen/llama-3-8b-instruct-awq
 
 # Qdrant
 QDRANT_HOST=qdrant-service
@@ -483,7 +483,7 @@ await client.create_collection(
     collection_name="squad_collection",
     vectors_config={
         "dense": VectorParams(
-            size=384,
+            size=1024,
             distance=Distance.COSINE,
             hnsw_config=HnswConfigDiff(
                 m=16,

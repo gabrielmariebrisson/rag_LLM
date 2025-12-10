@@ -124,7 +124,7 @@ async def lifespan(app: FastAPI):
         await vectorstore.connect()
         
         # Vérifier/créer la collection
-        await vectorstore.initialize_collection(dense_dim=384)  # 384 pour all-MiniLM-L6-v2
+        await vectorstore.initialize_collection(dense_dim=settings.DENSE_DIM)
         
         print(f"✅ Qdrant connecté sur {settings.QDRANT_HOST}:{settings.QDRANT_PORT}")
         print(f"✅ Collection '{settings.QDRANT_COLLECTION_NAME}' prête")

@@ -15,43 +15,48 @@ services:
       - rag-network
 
   vllm-service:
-    image: vllm/vllm-openai:latest
-    container_name: vllm-service
-    ports:
-      - "8001:8000"
-    volumes:
-      - ~/.cache/huggingface:/root/.cache/huggingface
-    command:
-      - --model
-      - TheBloke/Mistral-7B-Instruct-v0.2-AWQ
-      - --quantization
-      - awq
-      - --dtype
-      - float16
-      - --port
-      - "8000"
-      - --host
-      - "0.0.0.0"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    environment:
-      - CUDA_VISIBLE_DEVICES=0
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 120s
-    networks:
-      - rag-network
+      image: vllm/vllm-openai:latest
+      container_name: vllm-service
+      ports:
+        - "8001:8000"
+      volumes:
+        - /workspace/huggingface_cache:/root/.cache/huggingface
+      command:
+        - --model
+        - casperhansen/llama-3-8b-instruct-awq
+        - --quantization
+        - awq
+        - --dtype
+        - float16
+        - --max-model-len
+        - "4096"
+        - --gpu-memory-utilization
+        - "0.95"
+        - --enforce-eager
+        - --port
+        - "8000"
+        - --host
+        - "0.0.0.0"
+      deploy:
+        resources:
+          reservations:
+            devices:
+              - driver: nvidia
+                count: 1
+                capabilities: [gpu]
+      environment:
+        - CUDA_VISIBLE_DEVICES=0
+        - HUGGING_FACE_HUB_TOKEN=${HUGGING_FACE_HUB_TOKEN}
+      restart: unless-stopped
+      healthcheck:
+        test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+        interval: 30s
+        timeout: 10s
+        retries: 5 
+        start_period: 300s
+      networks:
+        - rag-network
 
 networks:
   rag-network:
     driver: bridge
-

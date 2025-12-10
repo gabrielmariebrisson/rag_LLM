@@ -1,6 +1,6 @@
 # 🚀 RAG System - Retrieval-Augmented Generation
 
-Système RAG (Retrieval-Augmented Generation) avancé utilisant la recherche hybride (dense + sparse), le reranking avec Cross-Encoder, et supportant plusieurs backends LLM (vLLM, OpenAI, Mistral).
+Système RAG (Retrieval-Augmented Generation) avancé utilisant la recherche hybride (dense + sparse) avec modèles SOTA (BGE-M3, SPLADE), le reranking avec BGE-reranker-v2-m3, et supportant plusieurs backends LLM (vLLM avec Llama-3-8B-AWQ, OpenAI, Mistral).
 
 ## 📋 Table des Matières
 
@@ -21,16 +21,16 @@ Système RAG (Retrieval-Augmented Generation) avancé utilisant la recherche hyb
 
 Ce projet implémente un système RAG complet basé sur le dataset SQuAD 2.0, avec :
 
-- **Recherche Hybride** : Combinaison de recherche dense (vecteurs) et sparse (BM25-like) via Qdrant
-- **Reranking** : Réordonnancement des résultats avec un modèle Cross-Encoder
+- **Recherche Hybride** : Combinaison de recherche dense (BGE-M3, 1024 dimensions) et sparse (SPLADE) via Qdrant
+- **Reranking** : Réordonnancement des résultats avec BGE-reranker-v2-m3 (Cross-Encoder SOTA)
 - **Multi-LLM** : Support de vLLM local, OpenAI API, et Mistral API
 - **Multi-langue** : Traduction automatique des réponses (10 langues supportées)
 - **Observabilité** : Tracing distribué avec OpenTelemetry et Jaeger
 
 ## ✨ Fonctionnalités
 
-- ✅ Recherche vectorielle hybride (dense + sparse embeddings)
-- ✅ Reranking avec Cross-Encoder pour améliorer la précision
+- ✅ Recherche vectorielle hybride (BGE-M3 dense + SPLADE sparse embeddings)
+- ✅ Reranking avec BGE-reranker-v2-m3 pour améliorer la précision
 - ✅ Support multi-backend LLM (vLLM, OpenAI, Mistral)
 - ✅ Interface web Streamlit moderne et intuitive
 - ✅ API REST FastAPI avec documentation automatique (Swagger)
@@ -76,7 +76,7 @@ rag_LLM/
 │  │  RAG Pipeline:                           │ │
 │  │  1. Embedding Service (Dense + Sparse)  │ │
 │  │  2. Hybrid Search (Qdrant)              │ │
-│  │  3. Reranker (Cross-Encoder)            │ │
+│  │  3. Reranker (BGE-reranker-v2-m3)      │ │
 │  │  4. LLM Client (vLLM/OpenAI/Mistral)    │ │
 │  │  5. Translation Service                 │ │
 │  └──────────────────────────────────────────┘ │
@@ -98,8 +98,8 @@ rag_LLM/
 1. **Frontend (Streamlit)** : Interface utilisateur web
 2. **Backend (FastAPI)** : API REST et orchestration du pipeline RAG
 3. **Qdrant** : Base de données vectorielle pour la recherche hybride
-4. **Embedding Service** : Génération d'embeddings dense (sentence-transformers) et sparse (BERT-based)
-5. **Reranker** : Modèle Cross-Encoder pour réordonner les résultats
+4. **Embedding Service** : Génération d'embeddings dense (fastembed BGE-M3, 1024 dimensions) et sparse (fastembed SPLADE)
+5. **Reranker** : Modèle BGE-reranker-v2-m3 (Cross-Encoder SOTA) pour réordonner les résultats
 6. **LLM Client** : Client agnostique supportant vLLM, OpenAI, et Mistral
 7. **vLLM Service** (optionnel) : Serveur d'inférence local pour latence optimale
 
@@ -199,15 +199,20 @@ LLM_MODEL_NAME=gpt-4o-mini
 
 ```env
 LLM_BASE_URL=http://localhost:8001/v1
-LLM_MODEL_NAME=TheBloke/Mistral-7B-Instruct-v0.2-AWQ
+LLM_MODEL_NAME=casperhansen/llama-3-8b-instruct-awq
+HUGGING_FACE_HUB_TOKEN=hf_xxxxxxxxxxxxx  # Requis pour télécharger les modèles
 ```
+
+**Note** : Obtenez votre token HuggingFace sur [https://huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
 
 #### Option 3 : Mistral API (Legacy)
 
 ```env
 MISTRAL_API_KEY=your-mistral-key
-LLM_MODEL_NAME=mistral-tiny-2407
+LLM_MODEL_NAME=casperhansen/llama-3-8b-instruct-awq
 ```
+
+**Note** : Mistral API est déprécié. Utiliser vLLM local ou OpenAI API à la place.
 
 ### Configuration Qdrant
 
@@ -221,7 +226,7 @@ QDRANT_COLLECTION_NAME=squad_collection
 
 ```env
 USE_RERANKER=true
-RERANKER_TOP_K=20
+RERANKER_TOP_K=100
 ```
 
 ## 🚀 Démarrage

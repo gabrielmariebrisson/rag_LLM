@@ -422,11 +422,11 @@ plt.savefig('data/results/evaluation_results/recall_comparison.png')
 #### 1. Ajuster les Modèles d'Embedding
 
 ```env
-# Modèle dense plus performant
-DENSE_MODEL=sentence-transformers/all-mpnet-base-v2
+# Modèle dense plus performant (SOTA)
+DENSE_MODEL=BAAI/bge-m3
 
-# Modèle reranker plus performant
-RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-12-v2
+# Modèle reranker plus performant (SOTA)
+RERANKER_MODEL=BAAI/bge-reranker-v2-m3
 ```
 
 #### 2. Augmenter RERANKER_TOP_K

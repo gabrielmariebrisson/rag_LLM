@@ -5,6 +5,7 @@ Documentation approfondie de l'architecture du système RAG.
 ## 📋 Table des Matières
 
 - [Vue d'Ensemble](#vue-densemble)
+- [Arborescence du Projet](#arborescence-du-projet)
 - [Architecture Système](#architecture-système)
 - [Pipeline RAG](#pipeline-rag)
 - [Composants](#composants)
@@ -23,6 +24,148 @@ Le système RAG est construit avec une architecture microservices modulaire :
 - **Vector Store** : Qdrant (base de données vectorielle)
 - **LLM** : vLLM local, OpenAI API, ou Mistral API
 - **Observabilité** : OpenTelemetry + Jaeger
+
+---
+
+## Arborescence du Projet
+
+### Structure Complète
+
+```
+rag_LLM/
+├── app/                          # Application FastAPI principale
+│   ├── __init__.py
+│   ├── main.py                   # Point d'entrée FastAPI (endpoints, lifespan)
+│   ├── schemas.py                # Modèles Pydantic (ChatRequest, ChatResponse)
+│   │
+│   ├── core/                     # Configuration et prompts
+│   │   ├── __init__.py
+│   │   ├── config.py            # Settings (pydantic-settings)
+│   │   ├── paths.py             # Chemins de fichiers
+│   │   └── prompts.py           # Templates de prompts (system/user)
+│   │
+│   ├── services/                 # Services métier
+│   │   ├── __init__.py
+│   │   ├── embeddings.py        # EmbeddingService (dense + sparse)
+│   │   ├── llm_client.py        # LLMClient (agnostique: vLLM/OpenAI/Mistral)
+│   │   ├── rag.py               # Orchestration RAG (retrieve + generate)
+│   │   ├── reranker.py          # RerankerService (Cross-Encoder)
+│   │   └── translation.py       # TranslationService (GoogleTranslator)
+│   │
+│   ├── utils/                    # Utilitaires
+│   │   ├── __init__.py
+│   │   └── text_processing.py   # Nettoyage de texte (regex)
+│   │
+│   └── vectorstores/             # Gestion des bases vectorielles
+│       ├── __init__.py
+│       └── qdrant_store.py      # QdrantVectorStore (hybrid search)
+│
+├── frontend/                     # Interface utilisateur Streamlit
+│   └── app.py                   # Application Streamlit (stateless)
+│
+├── scripts/                      # Scripts utilitaires
+│   ├── convert_squad_json_to_csv.py  # Conversion SQuAD JSON → CSV
+│   ├── evaluate_retrieval.py         # Évaluation Recall@5 (avec/sans reranker)
+│   └── migrate_to_qdrant.py         # Migration données → Qdrant
+│
+├── tests/                        # Tests unitaires et d'intégration
+│   ├── conftest.py              # Configuration pytest
+│   └── test_search.py           # Tests de recherche
+│
+├── docs/                         # Documentation
+│   ├── API.md                   # Documentation API REST
+│   ├── ARCHITECTURE.md          # Architecture technique (ce fichier)
+│   ├── CONFIGURATION.md          # Guide de configuration
+│   ├── DEPLOYMENT.md             # Guide de déploiement
+│   ├── EVALUATION.md             # Guide d'évaluation
+│   └── TROUBLESHOOTING.md        # Dépannage
+│
+├── docker/                       # Dockerfiles
+│   ├── Dockerfile.backend       # Image Docker backend FastAPI
+│   └── Dockerfile.frontend      # Image Docker frontend Streamlit
+│
+├── k8s/                          # Manifests Kubernetes
+│   ├── backend.yaml             # Deployment + Service backend
+│   ├── ingress.yaml              # Ingress (routing)
+│   └── vllm.yaml                 # Deployment + Service vLLM (GPU)
+│
+├── config/                       # Fichiers de configuration
+│   └── qdrant_config.yaml       # Configuration Qdrant
+│
+├── data/                         # Données et résultats
+│   └── results/
+│       └── evaluation_results/  # Résultats d'évaluation
+│           ├── evaluation_details.csv
+│           ├── evaluation_results.json
+│           └── evaluation_summary.csv
+│
+├── templates/                    # Templates et assets
+│   └── assets/
+│       └── architecture-diagram.png
+│
+├── archive/                      # Code legacy (POC Streamlit)
+│   ├── azure_rag.py
+│   ├── rag_LLM_web.py
+│   └── README.md
+│
+├── bin/                          # Scripts shell
+│   └── start_qdrant.sh          # Script de démarrage Qdrant
+│
+├── docker-compose.yml            # Orchestration Docker (vLLM, Jaeger, Qdrant)
+├── requirements.txt              # Dépendances Python
+├── pyproject.toml                # Configuration projet Python
+├── pytest.ini                   # Configuration pytest
+├── LICENSE                      # Licence
+├── CONTRIBUTING.md              # Guide de contribution
+└── README.md                    # Documentation principale
+```
+
+### Description des Répertoires Principaux
+
+#### `app/`
+**Rôle** : Code source de l'application FastAPI backend.
+
+- **`main.py`** : Point d'entrée FastAPI, définit les endpoints (`/chat`, `/health`, `/examples`) et le lifecycle (`lifespan`).
+- **`schemas.py`** : Modèles Pydantic pour validation des requêtes/réponses API.
+- **`core/`** : Configuration centralisée et templates de prompts.
+- **`services/`** : Services métier (embeddings, LLM, RAG, reranking, traduction).
+- **`utils/`** : Fonctions utilitaires (nettoyage de texte).
+- **`vectorstores/`** : Abstraction de la base vectorielle (Qdrant).
+
+#### `frontend/`
+**Rôle** : Interface utilisateur Streamlit (stateless).
+
+- **`app.py`** : Application Streamlit qui communique avec le backend via HTTP.
+
+#### `scripts/`
+**Rôle** : Scripts utilitaires pour migration, évaluation, conversion.
+
+- **`migrate_to_qdrant.py`** : Réindexe les données SQuAD dans Qdrant.
+- **`evaluate_retrieval.py`** : Calcule Recall@5 avec/sans reranker.
+- **`convert_squad_json_to_csv.py`** : Convertit SQuAD JSON en CSV.
+
+#### `tests/`
+**Rôle** : Tests unitaires et d'intégration.
+
+- Utilise `pytest` pour l'exécution.
+- **`conftest.py`** : Fixtures partagées.
+- **`test_search.py`** : Tests de recherche.
+
+#### `docs/`
+**Rôle** : Documentation complète du projet.
+
+- Guides d'architecture, configuration, déploiement, API, évaluation, dépannage.
+
+#### `docker/` et `k8s/`
+**Rôle** : Configuration de déploiement.
+
+- **`docker/`** : Dockerfiles pour backend et frontend.
+- **`k8s/`** : Manifests Kubernetes pour production.
+
+#### `archive/`
+**Rôle** : Code legacy du POC Streamlit original.
+
+- Conservé pour référence historique.
 
 ---
 
@@ -92,8 +235,8 @@ Requête Utilisateur
         ▼
 ┌───────────────────┐
 │  1. Embedding     │  Génération embeddings hybrides (dense + sparse)
-│     Query         │  - Dense: sentence-transformers
-└────────┬──────────┘  - Sparse: BERT-based SPLADE-like
+│     Query         │  - Dense: fastembed (BGE-M3, 1024 dimensions)
+└────────┬──────────┘  - Sparse: fastembed SPLADE (prithivida/Splade_pp_en_v1)
          │
          ▼
 ┌───────────────────┐
@@ -105,7 +248,7 @@ Requête Utilisateur
          ▼
 ┌───────────────────┐
 │  3. Reranking     │  Réordonnancement (optionnel)
-│  (Cross-Encoder)  │  - Score query-document avec Cross-Encoder
+│  (Cross-Encoder)  │  - Score query-document avec BGE-reranker-v2-m3
 └────────┬──────────┘  - Tri par score décroissant
          │             - Sélection top K
          │
@@ -145,8 +288,8 @@ Requête Utilisateur
 **Composant** : `EmbeddingService`
 
 **Traitement** :
-- Génère un embedding dense via sentence-transformers
-- Génère un embedding sparse via BERT (indices de mots importants)
+- Génère un embedding dense via fastembed (BGE-M3, 1024 dimensions)
+- Génère un embedding sparse via fastembed SPLADE (indices de mots importants)
 - Les deux embeddings sont utilisés pour la recherche hybride
 
 **Performance** :
@@ -175,7 +318,7 @@ où `k = 60` (paramètre de fusion).
 
 **Composant** : `RerankerService`
 
-**Modèle** : Cross-Encoder (ms-marco-MiniLM-L-6-v2)
+**Modèle** : Cross-Encoder (BAAI/bge-reranker-v2-m3)
 
 **Fonctionnement** :
 - Prend la query et chaque document en entrée
@@ -242,8 +385,8 @@ Question: {query}"
 **Responsabilité** : Génération d'embeddings hybrides (dense + sparse)
 
 **Modèles** :
-- **Dense** : sentence-transformers (all-MiniLM-L6-v2 par défaut)
-- **Sparse** : BERT-base-uncased (SPLADE-like)
+- **Dense** : fastembed (BAAI/bge-m3 par défaut, 1024 dimensions)
+- **Sparse** : fastembed (prithivida/Splade_pp_en_v1 par défaut)
 
 **Méthodes** :
 - `embed_hybrid(texts: List[str]) -> Tuple[List[np.ndarray], List[dict]]`
@@ -276,7 +419,7 @@ Question: {query}"
 
 **Responsabilité** : Réordonnancement des résultats avec Cross-Encoder
 
-**Modèle** : cross-encoder/ms-marco-MiniLM-L-6-v2
+**Modèle** : BAAI/bge-reranker-v2-m3 (Cross-Encoder via sentence-transformers)
 
 **Méthodes** :
 - `rerank(query: str, documents: List[str], top_k: int) -> List[Tuple[str, float]]`

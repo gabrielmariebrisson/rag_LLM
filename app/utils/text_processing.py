@@ -9,6 +9,7 @@ def clean_response(response: str) -> str:
     Extrait le texte depuis les artefacts de formatage comme:
     - array(['texte'],)
     - 'text': 'texte'
+    Si le token 'NO_ANSWER_FOUND' est détecté, retourne un espace unique ' '.
     
     Args:
         response: Réponse brute du LLM
@@ -17,22 +18,26 @@ def clean_response(response: str) -> str:
         Texte nettoyé
     """
     if not isinstance(response, str):
-        return ""
+        return " "
     
-    # Pattern principal: array(['texte'],)
+    extracted_text = response
+    
+    # 1. Extraction via les patterns (Legacy artifacts: array, json...)
     motif_principal = r"array\(\['(.*?)'\],"
-    resultat = re.search(motif_principal, response)
+    match = re.search(motif_principal, response)
     
-    if resultat:
-        return resultat.group(1)
+    if match:
+        extracted_text = match.group(1)
+    else:
+        motif_secondaire = r"'text':\s*'([^']+)'"
+        match = re.search(motif_secondaire, response)
+        if match:
+            extracted_text = match.group(1)
     
-    # Pattern secondaire: 'text': 'texte'
-    motif_secondaire = r"'text':\s*'([^']+)'"
-    resultat = re.search(motif_secondaire, response)
+    final_text = extracted_text.strip()
     
-    if resultat:
-        return resultat.group(1)
-    
-    # Si aucun pattern ne correspond, retourner la réponse originale
-    return response
-
+    # 3. Gestion du Sentinel Token
+    if "NO_ANSWER_FOUND" in final_text or "no_answer_found" in final_text.lower():
+        return ""
+        
+    return final_text

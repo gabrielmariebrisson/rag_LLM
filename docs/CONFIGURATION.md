@@ -6,6 +6,7 @@ Ce guide détaille toutes les variables d'environnement et options de configurat
 
 - [Vue d'Ensemble](#vue-densemble)
 - [Configuration LLM](#configuration-llm)
+- [Configuration HuggingFace Token](#configuration-huggingface-token)
 - [Configuration Qdrant](#configuration-qdrant)
 - [Configuration Embeddings](#configuration-embeddings)
 - [Configuration Reranker](#configuration-reranker)
@@ -45,14 +46,16 @@ Le système supporte **3 modes de configuration LLM** :
 
 ```env
 LLM_BASE_URL=http://localhost:8001/v1
-LLM_MODEL_NAME=TheBloke/Mistral-7B-Instruct-v0.2-AWQ
+LLM_MODEL_NAME=casperhansen/llama-3-8b-instruct-awq
 LLM_API_KEY=dummy-key  # vLLM accepte n'importe quelle clé
+HUGGING_FACE_HUB_TOKEN=your-huggingface-token-here  # Requis pour télécharger certains modèles
 ```
 
 **Prérequis** :
 - Docker (ou vLLM installé localement)
 - GPU NVIDIA avec CUDA 11.8+
-- Au moins 16GB VRAM (pour Mistral-7B quantifié)
+- Au moins 16GB VRAM (pour Llama-3-8B quantifié)
+- **HuggingFace Token** : Requis pour télécharger certains modèles gated. Obtenez-le sur [https://huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
 
 **Démarrer vLLM** :
 
@@ -65,14 +68,16 @@ Ou manuellement :
 ```bash
 docker run --gpus all -p 8001:8000 \
   -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -e HUGGING_FACE_HUB_TOKEN=your-token-here \
   vllm/vllm-openai:latest \
-  --model TheBloke/Mistral-7B-Instruct-v0.2-AWQ \
+  --model casperhansen/llama-3-8b-instruct-awq \
   --quantization awq \
   --dtype float16
 ```
 
 **Modèles Recommandés** :
-- `TheBloke/Mistral-7B-Instruct-v0.2-AWQ` : 7B paramètres, quantifié AWQ
+- `casperhansen/llama-3-8b-instruct-awq` : 8B paramètres, quantifié AWQ (recommandé)
+- `TheBloke/Mistral-7B-Instruct-v0.2-AWQ` : 7B paramètres, quantifié AWQ (alternative)
 - `mistralai/Mistral-7B-Instruct-v0.2` : 7B paramètres, non quantifié (nécessite plus de VRAM)
 
 ### Mode 2 : OpenAI API
@@ -109,13 +114,64 @@ LLM_MODEL_NAME=gpt-4o-mini
 ```env
 # Laisser LLM_BASE_URL vide ou non défini
 MISTRAL_API_KEY=your-mistral-api-key-here
-LLM_MODEL_NAME=mistral-tiny-2407
+LLM_MODEL_NAME=casperhansen/llama-3-8b-instruct-awq
 ```
 
 **Modèles Disponibles** :
 - `mistral-tiny-2407` : Modèle léger
 - `mistral-small-2407` : Modèle moyen
 - `mistral-large-2407` : Modèle performant
+
+---
+
+## Configuration HuggingFace Token
+
+### Variable : `HUGGING_FACE_HUB_TOKEN`
+
+**Description** : Token d'accès HuggingFace Hub requis pour télécharger certains modèles gated (modèles privés ou nécessitant une authentification).
+
+**Quand est-ce requis ?**
+- Pour télécharger des modèles gated depuis HuggingFace Hub
+- Pour vLLM qui télécharge les modèles au démarrage
+- Pour les embeddings et reranker qui téléchargent depuis HuggingFace
+
+**Comment obtenir un token ?**
+
+1. Créer un compte sur [HuggingFace.co](https://huggingface.co/join)
+2. Aller dans [Settings > Access Tokens](https://huggingface.co/settings/tokens)
+3. Créer un nouveau token avec les permissions "Read"
+4. Copier le token (format : `hf_xxxxxxxxxxxxx`)
+
+**Configuration** :
+
+```env
+HUGGING_FACE_HUB_TOKEN=hf_xxxxxxxxxxxxx
+```
+
+**Docker Compose** :
+
+Le token est automatiquement passé au conteneur vLLM via `docker-compose.yml` :
+
+```yaml
+environment:
+  - HUGGING_FACE_HUB_TOKEN=${HUGGING_FACE_HUB_TOKEN}
+```
+
+**Kubernetes** :
+
+Créer un Secret Kubernetes :
+
+```bash
+kubectl create secret generic huggingface-secret \
+  --from-literal=token=hf_xxxxxxxxxxxxx
+```
+
+Le secret est référencé dans `k8s/vllm.yaml`.
+
+**Notes** :
+- Le token est optionnel si tous les modèles utilisés sont publics
+- Pour les modèles gated (comme certains modèles Llama), le token est obligatoire
+- Ne jamais commiter le token dans le code source (utiliser `.env` qui est dans `.gitignore`)
 
 ---
 
@@ -165,62 +221,66 @@ QDRANT_API_KEY=your-qdrant-api-key  # Si requis
 La collection sera créée automatiquement au démarrage si elle n'existe pas.
 
 **Configuration par défaut** :
-- **Dense vectors** : 384 dimensions (all-MiniLM-L6-v2)
-- **Sparse vectors** : Variable (dépend du modèle BERT)
+- **Dense vectors** : 1024 dimensions (BGE-M3)
+- **Sparse vectors** : Variable (dépend du modèle SPLADE)
 - **Distance metric** : Cosine
 
 Pour personnaliser, modifier `app/vectorstores/qdrant_store.py` :
 
 ```python
-await vectorstore.initialize_collection(dense_dim=384)  # Modifier ici
+await vectorstore.initialize_collection(dense_dim=settings.DENSE_DIM)  # Utilise DENSE_DIM depuis config (1024 par défaut)
 ```
 
 ---
 
 ## Configuration Embeddings
 
+**Note importante** : Les embeddings utilisent maintenant `fastembed` au lieu de `sentence-transformers` pour de meilleures performances et une utilisation mémoire réduite.
+
 ### Modèle Dense
 
 **Variable** : `DENSE_MODEL`
 
-**Valeur par défaut** : `sentence-transformers/all-MiniLM-L6-v2`
+**Valeur par défaut** : `BAAI/bge-m3`
 
 **Modèles Recommandés** :
 
 | Modèle | Dimensions | Qualité | Vitesse | RAM Requise |
 |--------|-----------|---------|---------|-------------|
-| `all-MiniLM-L6-v2` | 384 | ⭐⭐⭐ | ⚡⚡⚡ | 1GB |
-| `all-mpnet-base-v2` | 768 | ⭐⭐⭐⭐⭐ | ⚡⚡ | 2GB |
-| `all-MiniLM-L12-v2` | 384 | ⭐⭐⭐⭐ | ⚡⚡⚡ | 1.5GB |
+| `BAAI/bge-m3` | 1024 | ⭐⭐⭐⭐⭐ | ⚡⚡⚡ | 2GB |
+| `BAAI/bge-large-en-v1.5` | 1024 | ⭐⭐⭐⭐⭐ | ⚡⚡ | 3GB |
+| `BAAI/bge-base-en-v1.5` | 768 | ⭐⭐⭐⭐ | ⚡⚡⚡ | 1.5GB |
 
 **Exemple** :
 
 ```env
-DENSE_MODEL=sentence-transformers/all-mpnet-base-v2
+DENSE_MODEL=BAAI/bge-m3
 ```
 
 **Notes** :
 - Plus de dimensions = meilleure qualité mais plus lent
-- Modifier `dense_dim` dans `initialize_collection()` si vous changez de modèle
+- La dimension est automatiquement détectée depuis le modèle (1024 pour BGE-M3)
 - Le modèle est téléchargé automatiquement depuis HuggingFace au premier usage
+- `fastembed` gère automatiquement GPU/CPU
 
 ### Modèle Sparse
 
 **Variable** : `SPARSE_MODEL`
 
-**Valeur par défaut** : `bert-base-uncased`
+**Valeur par défaut** : `prithivida/Splade_pp_en_v1`
 
-**Fonction** : Génère des embeddings sparse (SPLADE-like) pour la recherche hybride.
+**Fonction** : Génère des embeddings sparse (SPLADE) pour la recherche hybride via `fastembed.SparseTextEmbedding`.
 
 **Notes** :
-- Modèle BERT standard, utilisé pour générer des indices de mots importants
-- Pas de dimensions fixes (vecteur sparse)
+- Modèle SPLADE optimisé pour la recherche sparse
+- Pas de dimensions fixes (vecteur sparse avec indices de vocabulaire)
 - Généralement plus rapide que dense sur CPU
+- Utilise `fastembed` pour un chargement et traitement optimisés
 
 **Exemple** :
 
 ```env
-SPARSE_MODEL=bert-base-uncased
+SPARSE_MODEL=prithivida/Splade_pp_en_v1
 ```
 
 ---
@@ -248,7 +308,7 @@ USE_RERANKER=true  # ou false
 
 **Variable** : `RERANKER_TOP_K`
 
-**Valeur par défaut** : `20`
+**Valeur par défaut** : `100`
 
 **Description** : Nombre de documents récupérés via hybrid search avant reranking.
 
@@ -257,34 +317,39 @@ USE_RERANKER=true  # ou false
 - Plus bas = plus rapide mais risque de rater des documents pertinents
 
 **Recommandations** :
-- **Développement** : 20 (bon compromis)
-- **Production** : 30-50 (si latence acceptable)
-- **Temps réel** : 10-15 (si latence critique)
+- **Développement** : 50-100 (bon compromis)
+- **Production** : 100-150 (si latence acceptable)
+- **Temps réel** : 20-30 (si latence critique)
 
 **Exemple** :
 
 ```env
-RERANKER_TOP_K=30
+RERANKER_TOP_K=100
 ```
 
 ### Modèle Reranker
 
 **Variable** : `RERANKER_MODEL`
 
-**Valeur par défaut** : `cross-encoder/ms-marco-MiniLM-L-6-v2`
+**Valeur par défaut** : `BAAI/bge-reranker-v2-m3`
 
 **Modèles Disponibles** :
 
 | Modèle | Qualité | Vitesse | RAM |
 |--------|---------|---------|-----|
-| `ms-marco-MiniLM-L-6-v2` | ⭐⭐⭐⭐ | ⚡⚡⚡ | 500MB |
-| `ms-marco-MiniLM-L-12-v2` | ⭐⭐⭐⭐⭐ | ⚡⚡ | 1GB |
+| `BAAI/bge-reranker-v2-m3` | ⭐⭐⭐⭐⭐ | ⚡⚡⚡ | 1GB |
+| `cross-encoder/ms-marco-MiniLM-L-6-v2` | ⭐⭐⭐⭐ | ⚡⚡⚡ | 500MB |
+| `cross-encoder/ms-marco-MiniLM-L-12-v2` | ⭐⭐⭐⭐⭐ | ⚡⚡ | 1GB |
 
 **Exemple** :
 
 ```env
-RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-12-v2
+RERANKER_MODEL=BAAI/bge-reranker-v2-m3
 ```
+
+**Notes** :
+- BGE-reranker-v2-m3 est le modèle SOTA recommandé
+- Utilise `CrossEncoder` de `sentence-transformers` (dépendance requise)
 
 ---
 
@@ -345,9 +410,9 @@ print(torch.cuda.is_available())  # True si GPU disponible
 
 ### Modèles Utilisant GPU
 
-1. **Embeddings Dense** : `SentenceTransformer` → GPU automatique
-2. **Embeddings Sparse** : `BERT` → GPU automatique
-3. **Reranker** : `CrossEncoder` → GPU automatique (si disponible)
+1. **Embeddings Dense** : `fastembed.TextEmbedding` → GPU automatique (si disponible)
+2. **Embeddings Sparse** : `fastembed.SparseTextEmbedding` → GPU automatique (si disponible)
+3. **Reranker** : `CrossEncoder` (sentence-transformers) → GPU automatique (si disponible)
 4. **vLLM** : Requiert GPU explicitement
 
 ### Configuration Manuelle (Optionnel)
@@ -382,7 +447,7 @@ python -c "import torch; print(f'CUDA disponible: {torch.cuda.is_available()}');
 
 **Variable** : `EMBEDDING_MODEL_NAME`
 
-**Valeur par défaut** : `sentence-transformers/all-MiniLM-L6-v2`
+**Valeur par défaut** : `BAAI/bge-m3`
 
 **Usage** : Maintenu pour compatibilité. Utiliser `DENSE_MODEL` à la place.
 
@@ -485,6 +550,46 @@ python -c "import torch; print(f'CUDA disponible: {torch.cuda.is_available()}');
    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
    ```
 
+### Problème : Erreur de téléchargement de modèle HuggingFace
+
+**Symptômes** : Erreur "401 Unauthorized" ou "403 Forbidden" lors du téléchargement de modèles
+
+**Solutions** :
+
+1. **Vérifier que le token est défini** :
+   ```bash
+   echo $HUGGING_FACE_HUB_TOKEN
+   ```
+
+2. **Vérifier que le token est valide** :
+   ```bash
+   curl -H "Authorization: Bearer $HUGGING_FACE_HUB_TOKEN" \
+     https://huggingface.co/api/whoami
+   ```
+
+3. **Pour Docker Compose** :
+   ```bash
+   # Vérifier que le token est dans .env
+   cat .env | grep HUGGING_FACE_HUB_TOKEN
+   
+   # Redémarrer le service vLLM
+   docker-compose restart vllm-service
+   ```
+
+4. **Pour Kubernetes** :
+   ```bash
+   # Vérifier que le secret existe
+   kubectl get secret huggingface-secret
+   
+   # Créer le secret si nécessaire
+   kubectl create secret generic huggingface-secret \
+     --from-literal=token=hf_xxxxxxxxxxxxx
+   ```
+
+5. **Pour les modèles gated** :
+   - S'assurer d'avoir accepté les conditions d'utilisation du modèle sur HuggingFace
+   - Visiter la page du modèle et cliquer sur "Agree and access repository"
+
 ### Problème : Erreur Jaeger
 
 **Symptômes** : Erreurs de connexion à Jaeger dans les logs
@@ -519,12 +624,13 @@ QDRANT_PORT=6333
 
 ```env
 LLM_BASE_URL=http://localhost:8001/v1
-LLM_MODEL_NAME=TheBloke/Mistral-7B-Instruct-v0.2-AWQ
+LLM_MODEL_NAME=casperhansen/llama-3-8b-instruct-awq
+HUGGING_FACE_HUB_TOKEN=hf_xxxxxxxxxxxxx  # Requis pour télécharger les modèles
 QDRANT_HOST=your-cluster.qdrant.io
 QDRANT_PORT=6333
 QDRANT_API_KEY=your-key
 USE_RERANKER=true
-RERANKER_TOP_K=30
+RERANKER_TOP_K=100
 ENABLE_JAEGER_EXPORT=false
 ```
 
@@ -532,11 +638,12 @@ ENABLE_JAEGER_EXPORT=false
 
 ```env
 LLM_BASE_URL=http://localhost:8001/v1
-LLM_MODEL_NAME=TheBloke/Mistral-7B-Instruct-v0.2-AWQ
+LLM_MODEL_NAME=casperhansen/llama-3-8b-instruct-awq
+HUGGING_FACE_HUB_TOKEN=hf_xxxxxxxxxxxxx  # Requis pour télécharger les modèles
 QDRANT_HOST=localhost
 QDRANT_PORT=6333
 USE_RERANKER=true
-RERANKER_TOP_K=20
+RERANKER_TOP_K=100
 ENABLE_JAEGER_EXPORT=true
 OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 ```

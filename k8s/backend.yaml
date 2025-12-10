@@ -27,7 +27,7 @@ spec:
         - name: LLM_API_KEY
           value: "dummy-key"
         - name: LLM_MODEL_NAME
-          value: "mistralai/Mistral-7B-Instruct-v0.2"
+          value: "casperhansen/llama-3-8b-instruct-awq"
         # Qdrant Configuration
         - name: QDRANT_HOST
           value: "qdrant-service"
@@ -39,7 +39,7 @@ spec:
         - name: USE_RERANKER
           value: "true"
         - name: RERANKER_TOP_K
-          value: "20"
+          value: "100"
         # OpenTelemetry Configuration
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: "http://jaeger-service:4317"

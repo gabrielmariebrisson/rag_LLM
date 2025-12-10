@@ -1,12 +1,15 @@
-"""Script de migration/réindexation : CSV SQuAD -> Qdrant."""
+"""Script de migration/réindexation OPTIMISÉ : CSV SQuAD -> Qdrant."""
 import asyncio
 import os
 import sys
 import traceback
+import uuid  # <--- Important
 import pandas as pd
 from tqdm import tqdm
 from dotenv import load_dotenv
+from typing import List, Dict
 
+# Ajout du path pour les imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from app.core.config import Settings
@@ -14,10 +17,27 @@ from app.core.paths import SQUAD_CSV
 from app.services.embeddings import EmbeddingService
 from app.vectorstores.qdrant_store import QdrantVectorStore
 
+def create_sentence_windows(text: str, window_size: int = 3) -> List[str]:
+    """Découpe un texte en fenêtres glissantes de phrases."""
+    if not isinstance(text, str) or not text.strip():
+        return []
+    
+    # Nettoyage et split basique
+    text_clean = text.replace('?', '?|').replace('.', '.|').replace('!', '!|')
+    sentences = [s.strip() for s in text_clean.split('|') if s.strip()]
+    
+    if not sentences:
+        return []
+        
+    windows = []
+    stride = 2
+    for i in range(0, len(sentences), stride):
+        window = sentences[i : i + window_size]
+        if window:
+            windows.append(" ".join(window))
+    return windows
 
-# --- FIX : Batch size réduit à 32 (au lieu de 100) pour éviter le WriteTimeout ---
-async def migrate_csv_to_qdrant(csv_path: str, batch_size: int = 32):
-    """Migre les données du CSV SQuAD vers Qdrant."""
+async def migrate_csv_to_qdrant(csv_path: str, batch_size: int = 64):
     load_dotenv()
     config = Settings()
     
@@ -27,8 +47,8 @@ async def migrate_csv_to_qdrant(csv_path: str, batch_size: int = 32):
     
     try:
         await vectorstore.connect()
-        print("🔄 Initialisation de la collection Qdrant...")
-        await vectorstore.initialize_collection(dense_dim=384)
+        # On recrée la collection pour être propre
+        await vectorstore.initialize_collection(dense_dim=config.DENSE_DIM) 
     except Exception as e:
         print(f"❌ Erreur critique à l'initialisation : {e}")
         traceback.print_exc()
@@ -36,45 +56,54 @@ async def migrate_csv_to_qdrant(csv_path: str, batch_size: int = 32):
 
     print(f"📖 Chargement du CSV: {csv_path}")
     df = pd.read_csv(csv_path)
-    print(f"✅ {len(df)} lignes chargées")
     
-    # Nettoyage des NaN
-    df = df.fillna("")
+    # DÉDUPLICATION
+    print(f"📊 Lignes brutes: {len(df)}")
+    unique_df = df.drop_duplicates(subset=['context'])
+    unique_df = unique_df.fillna("")
+    print(f"📉 Contextes Uniques: {len(unique_df)}")
     
-    documents = []
+    documents_to_embed = []
     metadatas = []
     ids = []
     
-    print("🛠️ Préparation des données...")
-    for idx, row in df.iterrows():
-        title = str(row.get('title', ''))
+    print("🛠️ Préparation des fenêtres...")
+    
+    for idx, row in tqdm(unique_df.iterrows(), total=len(unique_df)):
         context = str(row.get('context', ''))
-        answers = str(row.get('answers', ''))
+        title = str(row.get('title', ''))
         
-        content = f"Title: {title}\nContext: {context}\nAnswer: {answers}"
-        documents.append(content)
-        
-        metadata = {
-            "id": str(row.get('id', '')),
-            "title": title,
-            "question": str(row.get('question', '')),
-            "context": context,
-            "answers": answers,
-            "page_content": content
-        }
-        metadatas.append(metadata)
-        ids.append(str(row.get('id', '')))
-    
-    print(f"🚀 Indexation de {len(documents)} documents dans Qdrant (Batch size: {batch_size})...")
-    total_batches = (len(documents) + batch_size - 1) // batch_size
-    
-    success_count = 0
-    error_count = 0
+        windows = create_sentence_windows(context, window_size=3)
+        if not windows and context:
+            windows = [context]
+            
+        for window in windows:
+            documents_to_embed.append(window)
+            
+            # ID DÉTERMINISTE COMPATIBLE QDRANT (UUID v5)
+            # uuid.NAMESPACE_DNS est un namespace standard.
+            # window est le contenu. Le résultat est un UUID valide string.
+            doc_uuid = str(uuid.uuid5(uuid.NAMESPACE_DNS, window))
+            ids.append(doc_uuid)
+            
+            # Metadatas complètes
+            metadatas.append({
+                "title": title,
+                "context": context,        
+                "full_text": context,
+                "source": "squad_2.0",
+                "type": "window_chunk",
+                "content_hash": doc_uuid # On stocke l'ID aussi comme hash pour le debug
+            })
 
-    for i in tqdm(range(0, len(documents), batch_size), desc="Indexation", total=total_batches):
-        batch_docs = documents[i:i+batch_size]
-        batch_metas = metadatas[i:i+batch_size]
-        batch_ids = ids[i:i+batch_size]
+    print(f"🚀 Indexation de {len(documents_to_embed)} chunks...")
+    
+    total_batches = (len(documents_to_embed) + batch_size - 1) // batch_size
+    
+    for i in tqdm(range(0, len(documents_to_embed), batch_size), total=total_batches):
+        batch_docs = documents_to_embed[i : i + batch_size]
+        batch_metas = metadatas[i : i + batch_size]
+        batch_ids = ids[i : i + batch_size]
         
         try:
             await vectorstore.add_documents(
@@ -82,27 +111,20 @@ async def migrate_csv_to_qdrant(csv_path: str, batch_size: int = 32):
                 metadatas=batch_metas,
                 ids=batch_ids
             )
-            success_count += 1
         except Exception as e:
-            error_count += 1
-            tqdm.write(f"\n❌ ERREUR BATCH {i//batch_size + 1}: {str(e)}")
-            # On n'affiche le traceback complet que si c'est une nouvelle erreur
-            if "Timeout" not in str(e):
-                tqdm.write(traceback.format_exc())
-            
-            if error_count >= 10:
-                print("\n🛑 Trop d'erreurs, arrêt d'urgence.")
-                break
+            if "already exists" not in str(e):
+                tqdm.write(f"⚠️ Erreur Batch {i}: {str(e)}")
             continue
     
     await vectorstore.disconnect()
-    print(f"\n✅ Migration terminée : {success_count} batches réussis, {error_count} échoués.")
-
+    print(f"\n✅ Migration terminée.")
 
 if __name__ == "__main__":
     csv_path = str(SQUAD_CSV)
     if not os.path.exists(csv_path):
-        print(f"❌ Fichier CSV introuvable: {csv_path}")
-        sys.exit(1)
+        csv_path = "data/raw/squad_2.0/train.csv"
     
-    asyncio.run(migrate_csv_to_qdrant(csv_path))
+    if os.path.exists(csv_path):
+        asyncio.run(migrate_csv_to_qdrant(csv_path))
+    else:
+        print("❌ CSV introuvable.")

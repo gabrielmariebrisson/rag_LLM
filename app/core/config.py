@@ -30,10 +30,12 @@ class Settings(BaseSettings):
         QDRANT_COLLECTION_NAME (str): Nom de la collection Qdrant
         USE_RERANKER (bool): Activer/désactiver le reranking
         RERANKER_TOP_K (int): Nombre de documents avant reranking
-        DENSE_MODEL (str): Modèle dense pour embeddings (sentence-transformers)
-        SPARSE_MODEL (str): Modèle sparse pour embeddings (BERT-based)
+        DENSE_MODEL (str): Modèle dense pour embeddings (fastembed)
+        SPARSE_MODEL (str): Modèle sparse pour embeddings (fastembed SPLADE)
         RERANKER_MODEL (str): Modèle Cross-Encoder pour reranking
+        DENSE_DIM (int): Dimension des embeddings denses
         BACKEND_URL (str): URL du backend FastAPI (pour le frontend)
+        HUGGING_FACE_HUB_TOKEN (Optional[str]): Token HuggingFace pour télécharger les modèles (requis pour certains modèles gated)
         
     Notes:
         - La validation LLM est effectuée automatiquement au chargement
@@ -44,7 +46,7 @@ class Settings(BaseSettings):
     # LLM Configuration (agnostique : OpenAI, Mistral API, ou vLLM local)
     LLM_BASE_URL: Optional[str] = None  # None = Mistral API, "http://localhost:8001/v1" = vLLM local
     LLM_API_KEY: Optional[str] = None  # Optionnel, requis seulement pour APIs externes
-    LLM_MODEL_NAME: str = "mistral-tiny-2407"  # Nom du modèle
+    LLM_MODEL_NAME: str = "casperhansen/llama-3-8b-instruct-awq"  # Nom du modèle
     
     # Legacy Mistral API (pour backward compatibility)
     MISTRAL_API_KEY: Optional[str] = None
@@ -54,7 +56,7 @@ class Settings(BaseSettings):
     FAISS_INDEX_DIR: str = "faiss_index"
     
     # Embedding Model (legacy)
-    EMBEDDING_MODEL_NAME: str = "sentence-transformers/all-MiniLM-L6-v2"
+    EMBEDDING_MODEL_NAME: str = "BAAI/bge-m3"
     
     # Qdrant Configuration
     QDRANT_HOST: str = "localhost"
@@ -63,15 +65,21 @@ class Settings(BaseSettings):
     
     # Reranker Configuration
     USE_RERANKER: bool = True
-    RERANKER_TOP_K: int = 20  # Nombre de docs avant reranking
+    RERANKER_TOP_K: int = 100  # Nombre de docs avant reranking
     
     # Embedding Models
-    DENSE_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
-    SPARSE_MODEL: str = "bert-base-uncased"  # Modèle BERT standard pour embeddings sparse (SPLADE-like)
-    RERANKER_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    DENSE_MODEL: str = "BAAI/bge-m3"
+    SPARSE_MODEL: str = "prithivida/Splade_pp_en_v1"  # Modèle SPLADE pour embeddings sparse
+    RERANKER_MODEL: str = "BAAI/bge-reranker-v2-m3"
+    
+    # Embedding Dimensions
+    DENSE_DIM: int = 1024  # Dimension des embeddings denses (BGE-M3)
     
     # Backend URL (pour le frontend)
     BACKEND_URL: str = "http://localhost:8000"
+    
+    # HuggingFace Hub Token (pour télécharger les modèles)
+    HUGGING_FACE_HUB_TOKEN: Optional[str] = None
     
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -105,7 +113,7 @@ class Settings(BaseSettings):
         # Backward compatibility: si MISTRAL_API_KEY est défini mais pas LLM_API_KEY
         if self.MISTRAL_API_KEY and (not self.LLM_API_KEY or not self.LLM_API_KEY.strip()):
             self.LLM_API_KEY = self.MISTRAL_API_KEY
-        if self.MISTRAL_MODEL_NAME and self.LLM_MODEL_NAME == "mistral-tiny-2407":
+        if self.MISTRAL_MODEL_NAME and self.LLM_MODEL_NAME == "casperhansen/llama-3-8b-instruct-awq":
             # Utiliser MISTRAL_MODEL_NAME si LLM_MODEL_NAME est encore à la valeur par défaut
             self.LLM_MODEL_NAME = self.MISTRAL_MODEL_NAME
         
