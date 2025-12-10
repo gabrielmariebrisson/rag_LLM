@@ -42,25 +42,26 @@ class LLMClient:
         messages: List[dict],
         model: Optional[str] = None,
         stream: bool = False
-    ) -> str:
+    ):
         """
         Génère une réponse via le LLM configuré.
         
         Args:
             messages: Liste de messages au format OpenAI (role, content)
             model: Nom du modèle (utilise config.LLM_MODEL_NAME si None)
-            stream: Si True, retourne un générateur (non implémenté pour l'instant)
+            stream: Si True, retourne un générateur de chunks
             
         Returns:
-            Réponse générée
+            Réponse générée (str) ou générateur de chunks si stream=True
         """
-        if stream:
-            raise NotImplementedError("Streaming not yet implemented")
-        
         model_name = model or self.config.LLM_MODEL_NAME
         
         if self._use_mistral_direct:
             # Utiliser client Mistral direct (legacy)
+            if stream:
+                # Mistral API legacy ne supporte pas le streaming dans cette implémentation
+                raise NotImplementedError("Streaming not supported for Mistral API legacy")
+            
             with self._mistral_client as mistral:
                 response = mistral.chat.complete(
                     model=model_name,
@@ -75,9 +76,18 @@ class LLMClient:
             response = self._openai_client.chat.completions.create(
                 model=model_name,
                 messages=messages,
-                stream=False
+                stream=stream
             )
-            if not response.choices:
-                return ""
-            return response.choices[0].message.content
+            
+            if stream:
+                # Retourner le générateur de chunks
+                def chunk_generator():
+                    for chunk in response:
+                        if chunk.choices and chunk.choices[0].delta.content:
+                            yield chunk.choices[0].delta.content
+                return chunk_generator()
+            else:
+                if not response.choices:
+                    return ""
+                return response.choices[0].message.content
 

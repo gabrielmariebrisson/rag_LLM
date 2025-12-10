@@ -1,4 +1,12 @@
-"""Application FastAPI principale."""
+"""
+Application FastAPI principale pour le système RAG.
+
+Ce module configure l'application FastAPI avec :
+- Endpoints REST pour les requêtes RAG
+- Configuration OpenTelemetry pour le tracing distribué
+- Gestion du cycle de vie des services (Qdrant, Embeddings, Reranker, LLM)
+- Middleware CORS pour le frontend Streamlit
+"""
 import time
 import os
 from contextlib import asynccontextmanager
@@ -13,6 +21,7 @@ from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.trace.export import ConsoleSpanExporter
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
@@ -27,16 +36,37 @@ resource = Resource.create({
 # Créer le provider de traces
 trace_provider = TracerProvider(resource=resource)
 
-# Exporter OTLP vers Jaeger
+# Configuration de l'export OpenTelemetry
+# Par défaut, on essaie d'exporter vers Jaeger, mais on peut le désactiver avec ENABLE_JAEGER_EXPORT=false
 jaeger_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317")
-otlp_exporter = OTLPSpanExporter(endpoint=jaeger_endpoint, insecure=True)
-span_processor = BatchSpanProcessor(otlp_exporter)
-trace_provider.add_span_processor(span_processor)
+jaeger_enabled = os.getenv("ENABLE_JAEGER_EXPORT", "true").lower() == "true"
 
-# Optionnel: Exporter console pour debug (désactiver en production)
-# console_exporter = ConsoleSpanExporter()
-# console_processor = BatchSpanProcessor(console_exporter)
-# trace_provider.add_span_processor(console_processor)
+if jaeger_enabled:
+    try:
+        # Créer l'exporter OTLP vers Jaeger
+        # Note: L'exporter ne lève pas d'exception à la création, seulement lors de l'export
+        # Si Jaeger n'est pas disponible, BatchSpanProcessor affichera des erreurs dans les logs
+        # mais l'application continuera de fonctionner normalement
+        otlp_exporter = OTLPSpanExporter(endpoint=jaeger_endpoint, insecure=True)
+        span_processor = BatchSpanProcessor(otlp_exporter)
+        trace_provider.add_span_processor(span_processor)
+        print(f"✅ OpenTelemetry: Export vers Jaeger configuré ({jaeger_endpoint})")
+        print("   ⚠️  Si Jaeger n'est pas disponible, des erreurs de connexion apparaîtront dans les logs")
+        print("   💡 Pour désactiver l'export Jaeger, définissez ENABLE_JAEGER_EXPORT=false")
+    except Exception as e:
+        # Si la création de l'exporter échoue (peu probable), utiliser console
+        print(f"⚠️  OpenTelemetry: Erreur lors de la configuration Jaeger: {e}")
+        print("   → Utilisation de l'exporteur console")
+        console_exporter = ConsoleSpanExporter()
+        console_processor = BatchSpanProcessor(console_exporter)
+        trace_provider.add_span_processor(console_processor)
+else:
+    # Jaeger désactivé explicitement, utiliser uniquement l'exporteur console
+    print("ℹ️  OpenTelemetry: Export Jaeger désactivé (ENABLE_JAEGER_EXPORT=false)")
+    print("   → Utilisation de l'exporteur console")
+    console_exporter = ConsoleSpanExporter()
+    console_processor = BatchSpanProcessor(console_exporter)
+    trace_provider.add_span_processor(console_processor)
 
 # Définir le provider global
 trace.set_tracer_provider(trace_provider)
@@ -61,7 +91,25 @@ llm_client: Optional[LLMClient] = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Gestion du cycle de vie de l'application."""
+    """
+    Gère le cycle de vie de l'application FastAPI.
+    
+    Initialise tous les services au démarrage et les nettoie à l'arrêt.
+    
+    Args:
+        app: Instance de l'application FastAPI.
+        
+    Yields:
+        None: L'application reste active entre le yield.
+        
+    Raises:
+        Exception: Si l'initialisation des services échoue (Qdrant, Embeddings, etc.).
+        
+    Notes:
+        - Services initialisés : EmbeddingService, RerankerService, LLMClient, QdrantVectorStore
+        - La collection Qdrant est créée automatiquement si elle n'existe pas
+        - Les erreurs d'initialisation empêchent le démarrage de l'application
+    """
     global vectorstore, embedding_service, reranker_service, llm_client
     
     # Startup: Initialiser Qdrant et services
@@ -128,7 +176,31 @@ app.add_middleware(
 
 @app.get("/health")
 async def health_check():
-    """Endpoint de santé."""
+    """
+    Endpoint de santé de l'application.
+    
+    Vérifie l'état de tous les services critiques :
+    - Connexion à Qdrant
+    - Chargement du vectorstore
+    - Configuration du reranker
+    - Configuration LLM
+    
+    Returns:
+        dict: Dictionnaire contenant :
+            - status (str): "healthy" si tous les services sont opérationnels
+            - vectorstore_loaded (bool): True si le vectorstore est chargé
+            - qdrant_host (str): Host de Qdrant
+            - qdrant_port (int): Port de Qdrant
+            - collection_name (str): Nom de la collection Qdrant
+            - reranker_enabled (bool): État du reranker
+            - llm_base_url (str): URL de base du LLM ou "Mistral API (legacy)"
+            - llm_model (str): Nom du modèle LLM
+            
+    Example:
+        >>> response = await health_check()
+        >>> print(response["status"])  # "healthy"
+        >>> print(response["vectorstore_loaded"])  # True
+    """
     return {
         "status": "healthy",
         "vectorstore_loaded": vectorstore is not None,
@@ -146,7 +218,47 @@ async def chat(request: ChatRequest):
     """
     Endpoint principal pour les requêtes RAG.
     
-    Orchestration: Hybrid Search -> (optionnel) Reranking -> Prompt Formatting -> LLM Call -> Text Cleaning -> Translation
+    Orchestre le pipeline complet RAG :
+    1. Hybrid Search (dense + sparse) dans Qdrant
+    2. (Optionnel) Reranking avec Cross-Encoder
+    3. Formatage du prompt avec contexte
+    4. Génération de réponse via LLM
+    5. Nettoyage du texte généré
+    6. Traduction si nécessaire
+    
+    Args:
+        request (ChatRequest): Requête contenant :
+            - query (str): Question de l'utilisateur
+            - k (int): Nombre de documents à récupérer (1-20)
+            - language (str): Langue cible de la réponse (code ISO, ex: "fr", "en")
+            - use_reranker (Optional[bool]): Override pour activer/désactiver reranker
+            
+    Returns:
+        ChatResponse: Réponse contenant :
+            - response (str): Réponse générée et traduite
+            - retrieved_documents (List[DocumentResponse]): Documents sources utilisés
+            - language (str): Langue de la réponse générée
+            - processing_time (float): Temps d'exécution en secondes
+            
+    Raises:
+        HTTPException 503: Si les services ne sont pas chargés (vectorestore, embedding_service, llm_client)
+        HTTPException 500: Si une erreur survient lors du traitement
+        
+    Notes:
+        - Le pipeline est instrumenté avec OpenTelemetry pour le tracing
+        - La latence est mesurée et incluse dans la réponse
+        - Les spans OpenTelemetry incluent les attributs : query, k, language, use_reranker
+        
+    Example:
+        >>> request = ChatRequest(
+        ...     query="What is the capital of France?",
+        ...     k=5,
+        ...     language="en",
+        ...     use_reranker=True
+        ... )
+        >>> response = await chat(request)
+        >>> print(response.response)  # "The capital of France is Paris."
+        >>> print(f"Retrieved {len(response.retrieved_documents)} documents")
     """
     if vectorstore is None or embedding_service is None or llm_client is None:
         raise HTTPException(
@@ -229,11 +341,28 @@ async def chat(request: ChatRequest):
 @app.get("/examples", response_model=ExampleResponse)
 async def get_examples():
     """
-    Retourne une liste d'exemples de questions.
+    Retourne une liste d'exemples de questions pour l'interface utilisateur.
     
-    Essaie de charger depuis le CSV, sinon retourne des exemples hardcodés.
+    Essaie de charger des exemples aléatoires depuis le dataset SQuAD (train.csv),
+    sinon retourne une liste d'exemples hardcodés.
+    
+    Returns:
+        ExampleResponse: Réponse contenant :
+            - examples (List[str]): Liste de 10 questions d'exemple (ou moins si le dataset est plus petit)
+            
+    Notes:
+        - Les exemples sont tirés aléatoirement du fichier `data/raw/squad_2.0/train.csv`
+        - Si le fichier n'existe pas ou une erreur survient, retourne des exemples de fallback
+        - Les exemples de fallback sont des questions génériques en anglais
+        
+    Example:
+        >>> response = await get_examples()
+        >>> print(f"Found {len(response.examples)} example questions")
+        >>> print(response.examples[0])  # "What is the capital of France?"
     """
-    csv_path = "squad_2.0/train.csv"
+    from app.core.paths import SQUAD_CSV
+    
+    csv_path = str(SQUAD_CSV)
     
     try:
         if os.path.exists(csv_path):

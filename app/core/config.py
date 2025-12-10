@@ -1,10 +1,45 @@
-"""Configuration centralisée avec pydantic-settings."""
+"""
+Configuration centralisée de l'application avec pydantic-settings.
+
+Ce module définit toutes les variables d'environnement et leur validation.
+Les valeurs sont chargées depuis le fichier .env ou les variables d'environnement système.
+"""
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 
 
 class Settings(BaseSettings):
-    """Configuration de l'application via variables d'environnement."""
+    """
+    Configuration de l'application via variables d'environnement.
+    
+    Toutes les variables peuvent être définies dans un fichier .env ou comme
+    variables d'environnement système. Les valeurs par défaut sont utilisées
+    si aucune valeur n'est fournie.
+    
+    Attributes:
+        LLM_BASE_URL (Optional[str]): URL de base pour le LLM. None = Mistral API,
+            "http://localhost:8001/v1" = vLLM local, "https://api.openai.com/v1" = OpenAI API
+        LLM_API_KEY (Optional[str]): Clé API pour OpenAI/Mistral (optionnel pour vLLM local)
+        LLM_MODEL_NAME (str): Nom du modèle LLM à utiliser
+        MISTRAL_API_KEY (Optional[str]): Clé API Mistral (legacy, backward compatibility)
+        MISTRAL_MODEL_NAME (Optional[str]): Nom du modèle Mistral (legacy)
+        FAISS_INDEX_DIR (str): Répertoire contenant l'index FAISS (legacy, migration)
+        EMBEDDING_MODEL_NAME (str): Nom du modèle d'embedding (legacy)
+        QDRANT_HOST (str): Host de Qdrant (localhost ou cluster cloud)
+        QDRANT_PORT (int): Port de Qdrant (défaut: 6333)
+        QDRANT_COLLECTION_NAME (str): Nom de la collection Qdrant
+        USE_RERANKER (bool): Activer/désactiver le reranking
+        RERANKER_TOP_K (int): Nombre de documents avant reranking
+        DENSE_MODEL (str): Modèle dense pour embeddings (sentence-transformers)
+        SPARSE_MODEL (str): Modèle sparse pour embeddings (BERT-based)
+        RERANKER_MODEL (str): Modèle Cross-Encoder pour reranking
+        BACKEND_URL (str): URL du backend FastAPI (pour le frontend)
+        
+    Notes:
+        - La validation LLM est effectuée automatiquement au chargement
+        - Voir validate_llm_config() pour la logique de validation
+        - Le fichier .env est chargé automatiquement depuis la racine du projet
+    """
     
     # LLM Configuration (agnostique : OpenAI, Mistral API, ou vLLM local)
     LLM_BASE_URL: Optional[str] = None  # None = Mistral API, "http://localhost:8001/v1" = vLLM local
@@ -46,7 +81,23 @@ class Settings(BaseSettings):
     )
     
     def validate_llm_config(self) -> None:
-        """Valide la configuration LLM."""
+        """
+        Valide et normalise la configuration LLM.
+        
+        Détermine automatiquement quel provider LLM utiliser (vLLM, OpenAI, Mistral)
+        en fonction des variables définies et applique les valeurs par défaut nécessaires.
+        
+        Raises:
+            ValueError: Si aucune configuration LLM valide n'est trouvée.
+                Message d'erreur indique les options disponibles.
+                
+        Notes:
+            - Si LLM_BASE_URL est défini, utilise vLLM local ou OpenAI API
+            - Si LLM_BASE_URL est None, utilise Mistral API (legacy) si MISTRAL_API_KEY est défini
+            - vLLM local accepte n'importe quelle clé API (dummy-key si non fournie)
+            - Les chaînes vides sont normalisées en None
+            - Backward compatibility: MISTRAL_API_KEY peut être utilisé à la place de LLM_API_KEY
+        """
         # Normaliser LLM_BASE_URL (chaîne vide = None)
         if self.LLM_BASE_URL and not self.LLM_BASE_URL.strip():
             self.LLM_BASE_URL = None

@@ -1,4 +1,14 @@
-"""Service RAG : récupération de documents et génération de réponses."""
+"""
+Service RAG : récupération de documents et génération de réponses.
+
+Ce module implémente le pipeline RAG principal :
+- Recherche hybride (dense + sparse) dans Qdrant
+- Reranking optionnel avec Cross-Encoder
+- Génération de réponses via LLM
+- Nettoyage du texte généré
+
+Toutes les opérations sont instrumentées avec OpenTelemetry pour le tracing distribué.
+"""
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Optional
@@ -31,18 +41,43 @@ async def retrieve_documents(
     """
     Récupère les documents pertinents depuis Qdrant avec option de reranking.
     
-    Pipeline: Hybrid Search (top 20) -> (optionnel) Reranking -> Top k
+    Pipeline complet :
+    1. Hybrid Search (dense + sparse) dans Qdrant (top RERANKER_TOP_K ou k)
+    2. (Optionnel) Reranking avec Cross-Encoder si activé
+    3. Sélection des top k documents finaux
     
     Args:
-        vectorstore: Instance QdrantVectorStore
-        query: Question de l'utilisateur
-        k: Nombre de documents finaux à retourner
-        use_reranker: Override pour activer/désactiver reranker (None = utilise config)
-        reranker_service: Service de reranking (requis si use_reranker=True)
-        config: Configuration (pour déterminer use_reranker si None)
-        
+        vectorstore: Instance QdrantVectorStore pour la recherche vectorielle.
+        query: Question de l'utilisateur à rechercher.
+        k: Nombre de documents finaux à retourner. Defaults to 5.
+        use_reranker: Override pour activer/désactiver reranker.
+            Si None, utilise la valeur de config.USE_RERANKER. Defaults to None.
+        reranker_service: Service de reranking (requis si use_reranker=True).
+            Defaults to None.
+        config: Configuration de l'application pour déterminer use_reranker
+            si None. Defaults to None.
+            
     Returns:
-        Liste des documents récupérés (format LangChain Document)
+        List[Document]: Liste des documents récupérés au format LangChain Document.
+            Chaque document contient page_content et metadata.
+            
+    Notes:
+        - Si use_reranker=True, récupère config.RERANKER_TOP_K documents avant reranking
+        - Si use_reranker=False, récupère directement k documents
+        - La recherche hybride utilise RRF (Reciprocal Rank Fusion) pour combiner dense + sparse
+        - Les spans OpenTelemetry sont créés pour "rag.retrieval" et "rag.reranking"
+        
+    Example:
+        >>> docs = await retrieve_documents(
+        ...     vectorstore=vectorstore,
+        ...     query="What is photosynthesis?",
+        ...     k=5,
+        ...     use_reranker=True,
+        ...     reranker_service=reranker_service,
+        ...     config=settings
+        ... )
+        >>> print(f"Retrieved {len(docs)} documents")
+        >>> print(docs[0].page_content[:100])
     """
     # Déterminer si on utilise le reranker
     if use_reranker is None:
@@ -117,14 +152,36 @@ async def generate_response(
     """
     Génère une réponse via le LLM configuré (agnostique : OpenAI, Mistral API, ou vLLM local).
     
+    Formatage du prompt :
+    - System prompt : Instructions pour le LLM
+    - User prompt : Contexte + Question formatée
+    
+    Le texte généré est ensuite nettoyé pour retirer les artefacts.
+    
     Args:
-        query: Question de l'utilisateur
-        context: Contexte récupéré depuis la base vectorielle
-        config: Configuration de l'application
-        llm_client: Client LLM (créé automatiquement si None)
-        
+        query: Question de l'utilisateur à répondre.
+        context: Contexte récupéré depuis la base vectorielle (documents concaténés).
+        config: Configuration de l'application contenant le nom du modèle.
+        llm_client: Client LLM réutilisable. Si None, un nouveau client est créé.
+            Defaults to None.
+            
     Returns:
-        Réponse générée et nettoyée
+        str: Réponse générée et nettoyée par le LLM.
+        
+    Notes:
+        - L'appel LLM est exécuté dans un ThreadPoolExecutor pour ne pas bloquer l'event loop
+        - Le prompt est formaté avec format_user_prompt() qui combine contexte et question
+        - La réponse est nettoyée avec clean_response() pour retirer les artefacts
+        - Les spans OpenTelemetry incluent : model, query_length, context_length, response_length
+        
+    Example:
+        >>> response = await generate_response(
+        ...     query="What is photosynthesis?",
+        ...     context="Photosynthesis is the process...",
+        ...     config=settings,
+        ...     llm_client=llm_client
+        ... )
+        >>> print(response)  # "Photosynthesis is the process by which..."
     """
     # Formater le prompt utilisateur
     user_prompt = format_user_prompt(context, query)

@@ -311,7 +311,7 @@ with st.container():
     
     with col2:
         try:
-            st.image("templates/assets/architecture-diagram.png", caption=_("Architecture du pipeline RAG"), use_container_width=True)
+            st.image("templates/assets/architecture-diagram.png", caption=_("Architecture du pipeline RAG"), width='stretch')
         except:
             st.info(_("Image d'architecture non disponible"))
 
@@ -491,7 +491,7 @@ df_infrastructure = pd.DataFrame(infrastructure_data)
 
 st.dataframe(
     df_infrastructure,
-    use_container_width=True,
+    width='stretch',
     hide_index=True,
     column_config={
         _("Coût Mensuel (USD)"): st.column_config.NumberColumn(format="$%.2f")
@@ -530,7 +530,7 @@ df_llm = pd.DataFrame(llm_data)
 
 st.dataframe(
     df_llm,
-    use_container_width=True,
+    width='stretch',
     hide_index=True,
     column_config={
         _("Prix Input ($/1M)"): st.column_config.NumberColumn(format="$%.2f"),
@@ -563,7 +563,7 @@ df_summary = pd.DataFrame(summary_data)
 
 st.dataframe(
     df_summary,
-    use_container_width=True,
+    width='stretch',
     hide_index=True,
     column_config={
         _("Coût Fixe (Infrastructure)"): st.column_config.NumberColumn(format="$%.2f"),
@@ -595,7 +595,7 @@ with col1:
         showlegend=True
     )
     
-    st.plotly_chart(fig_pie, use_container_width=True)
+    st.plotly_chart(fig_pie, width='stretch')
 
 with col2:
     st.subheader(_("📈 Comparaison des Scénarios"))
@@ -619,7 +619,7 @@ with col2:
         showlegend=False
     )
     
-    st.plotly_chart(fig_bar, use_container_width=True)
+    st.plotly_chart(fig_bar, width='stretch')
 
 st.header(_("🎯 Analyse et Conclusion"))
 

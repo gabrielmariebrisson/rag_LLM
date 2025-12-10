@@ -3,6 +3,12 @@ import json
 import pandas as pd
 import sys
 import os
+from pathlib import Path
+
+# Ajouter le répertoire parent au path pour les imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from app.core.paths import DATA_RAW
 
 def convert_squad_json_to_csv(json_path: str, csv_path: str):
     """
@@ -62,12 +68,13 @@ def convert_squad_json_to_csv(json_path: str, csv_path: str):
 
 
 if __name__ == "__main__":
-    json_path = "squad_2.0/train-v2.0.json"
-    csv_path = "squad_2.0/train.csv"
+    json_path = str(DATA_RAW / "squad_2.0" / "train-v2.0.json")
+    csv_path = str(DATA_RAW / "squad_2.0" / "train.csv")
     
     if not os.path.exists(json_path):
         print(f"❌ Fichier JSON introuvable: {json_path}")
         print("💡 Téléchargez d'abord le fichier depuis https://rajpurkar.github.io/SQuAD-explorer/dataset/train-v2.0.json")
+        print(f"💡 Placez-le dans: {DATA_RAW / 'squad_2.0'}")
         sys.exit(1)
     
     print("=" * 60)

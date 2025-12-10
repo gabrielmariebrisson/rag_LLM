@@ -1,702 +1,499 @@
-# 🚀 RAG System - Guide Complet
+# 🚀 RAG System - Retrieval-Augmented Generation
 
-Système RAG (Retrieval-Augmented Generation) avec Qdrant, recherche hybride, reranking et vLLM.
+Système RAG (Retrieval-Augmented Generation) avancé utilisant la recherche hybride (dense + sparse), le reranking avec Cross-Encoder, et supportant plusieurs backends LLM (vLLM, OpenAI, Mistral).
 
-## 📋 Table des matières
+## 📋 Table des Matières
 
-- [Prérequis](#prérequis)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [Démarrage des services](#démarrage-des-services)
-- [Migration des données](#migration-des-données)
-- [Lancement de l'application](#lancement-de-lapplication)
-- [Tests et évaluation](#tests-et-évaluation)
-- [Déploiement](#déploiement)
-- [Troubleshooting](#troubleshooting)
+- [Description](#-description)
+- [Fonctionnalités](#-fonctionnalités)
+- [Architecture](#-architecture)
+- [Prérequis](#-prérequis)
+- [Installation](#-installation)
+- [Configuration](#-configuration)
+- [Démarrage](#-démarrage)
+- [Utilisation](#-utilisation)
+- [API Documentation](#-api-documentation)
+- [Évaluation](#-évaluation)
+- [Déploiement](#-déploiement)
+- [Troubleshooting](#-troubleshooting)
 
----
+## 🎯 Description
 
-## 🔧 Prérequis
+Ce projet implémente un système RAG complet basé sur le dataset SQuAD 2.0, avec :
 
-### Logiciels requis
+- **Recherche Hybride** : Combinaison de recherche dense (vecteurs) et sparse (BM25-like) via Qdrant
+- **Reranking** : Réordonnancement des résultats avec un modèle Cross-Encoder
+- **Multi-LLM** : Support de vLLM local, OpenAI API, et Mistral API
+- **Multi-langue** : Traduction automatique des réponses (10 langues supportées)
+- **Observabilité** : Tracing distribué avec OpenTelemetry et Jaeger
 
-```bash
-# Python 3.10+
-python --version
+## ✨ Fonctionnalités
 
-# Docker & Docker Compose
-docker --version
-docker-compose --version
+- ✅ Recherche vectorielle hybride (dense + sparse embeddings)
+- ✅ Reranking avec Cross-Encoder pour améliorer la précision
+- ✅ Support multi-backend LLM (vLLM, OpenAI, Mistral)
+- ✅ Interface web Streamlit moderne et intuitive
+- ✅ API REST FastAPI avec documentation automatique (Swagger)
+- ✅ Traduction automatique des réponses
+- ✅ Observabilité avec OpenTelemetry/Jaeger
+- ✅ Déploiement Docker et Kubernetes
+- ✅ Scripts d'évaluation (Recall@K, TTFT)
 
-# Git
-git --version
+## 📁 Structure du Projet
+
+Le projet suit une structure modulaire et professionnelle :
+
+```
+rag_LLM/
+├── app/                    # Code source backend (FastAPI)
+├── frontend/               # Interface utilisateur (Streamlit)
+├── scripts/                # Scripts utilitaires
+├── tests/                  # Tests unitaires et d'intégration
+├── config/                 # Fichiers de configuration
+├── data/                   # Données (raw, processed, results)
+├── docker/                 # Dockerfiles
+├── docs/                   # Documentation
+├── examples/               # Exemples d'utilisation
+├── bin/                    # Scripts exécutables
+├── logs/                   # Fichiers de logs
+└── archive/                # Fichiers legacy
 ```
 
-### GPU (optionnel, pour vLLM local)
 
-- GPU NVIDIA avec CUDA 12+ (pour vLLM local)
-- Ou utiliser Google Colab (voir `GPU_CLOUD_GUIDE.md`)
-- Ou utiliser une API externe (OpenAI, Mistral)
+## 🏗️ Architecture
 
----
+```
+┌─────────────────┐
+│   Frontend      │
+│   Streamlit     │
+│   (Port 8501)   │
+└────────┬────────┘
+         │ HTTP
+         │
+┌────────▼──────────────────────────────────────┐
+│         Backend FastAPI (Port 8000)           │
+│  ┌──────────────────────────────────────────┐ │
+│  │  RAG Pipeline:                           │ │
+│  │  1. Embedding Service (Dense + Sparse)  │ │
+│  │  2. Hybrid Search (Qdrant)              │ │
+│  │  3. Reranker (Cross-Encoder)            │ │
+│  │  4. LLM Client (vLLM/OpenAI/Mistral)    │ │
+│  │  5. Translation Service                 │ │
+│  └──────────────────────────────────────────┘ │
+└────────┬────────────────────┬─────────────────┘
+         │                    │
+    ┌────▼────┐         ┌─────▼─────┐
+    │ Qdrant  │         │   vLLM    │
+    │ :6333   │         │  :8001    │
+    └─────────┘         └───────────┘
+                              │
+                         ┌────▼─────┐
+                         │   GPU    │
+                         │  (CUDA)  │
+                         └──────────┘
+```
 
-## 📦 Installation
+### Composants Principaux
 
-### 1. Cloner le repository
+1. **Frontend (Streamlit)** : Interface utilisateur web
+2. **Backend (FastAPI)** : API REST et orchestration du pipeline RAG
+3. **Qdrant** : Base de données vectorielle pour la recherche hybride
+4. **Embedding Service** : Génération d'embeddings dense (sentence-transformers) et sparse (BERT-based)
+5. **Reranker** : Modèle Cross-Encoder pour réordonner les résultats
+6. **LLM Client** : Client agnostique supportant vLLM, OpenAI, et Mistral
+7. **vLLM Service** (optionnel) : Serveur d'inférence local pour latence optimale
+
+## 📦 Prérequis
+
+### Système
+
+- **Python** : 3.12+ (recommandé 3.12.3)
+- **CUDA** : 11.8+ ou 12.x (pour GPU, optionnel)
+- **Docker** : Optionnel (pour vLLM et Jaeger)
+- **RAM** : Minimum 8GB (16GB+ recommandé avec GPU)
+
+### Services Externes (Optionnels)
+
+- **Qdrant** : Local ou cloud (Qdrant Cloud)
+- **OpenAI API** : Clé API valide
+- **Mistral API** : Clé API valide
+
+## 🔧 Installation
+
+### 1. Cloner le Repository
 
 ```bash
-git clone <votre-repo-url>
+git clone <repository-url>
 cd rag_LLM
 ```
 
-### 2. Créer un environnement virtuel
+### 2. Créer un Environnement Virtuel
 
 ```bash
-# Avec venv
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
+python3.12 -m venv venv
+source venv/bin/activate  # Sur Linux/Mac
 # ou
-venv\Scripts\activate  # Windows
-
-# Avec conda
-conda create -n rag_llm python=3.10
-conda activate rag_llm
+venv\Scripts\activate  # Sur Windows
 ```
 
-### 3. Installer les dépendances
+### 3. Installer les Dépendances
 
 ```bash
-# Mettre à jour pip
-pip install --upgrade pip setuptools wheel
-
-# Installer toutes les dépendances
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 4. Vérifier l'installation
+**Note** : L'installation peut prendre 10-15 minutes, notamment pour PyTorch et les bibliothèques CUDA.
+
+### 4. Installer Qdrant (sans Docker)
+
+Télécharger Qdrant depuis [qdrant.tech](https://qdrant.tech/documentation/guides/installation/):
 
 ```bash
-# Vérifier que les packages critiques sont installés
-python -c "import fastapi, qdrant_client, vllm, transformers; print('✅ Installation OK')"
+# Linux (exemple)
+wget https://github.com/qdrant/qdrant/releases/download/v1.7.0/qdrant-x86_64-unknown-linux-gnu.tar.gz
+tar -xzf qdrant-x86_64-unknown-linux-gnu.tar.gz
+chmod +x qdrant
+mv qdrant ./
 ```
 
----
+Ou utiliser le script fourni :
+```bash
+chmod +x bin/start_qdrant.sh
+./bin/start_qdrant.sh
+```
+
+### 5. Préparer les Données
+
+Le projet utilise le dataset SQuAD 2.0. Les données doivent être dans `data/raw/squad_2.0/train.csv`.
+
+Si nécessaire, convertir depuis JSON :
+```bash
+python scripts/convert_squad_json_to_csv.py
+```
 
 ## ⚙️ Configuration
 
-### 1. Créer le fichier `.env`
+### Variables d'Environnement
+
+Créer un fichier `.env` à la racine du projet :
 
 ```bash
-# Copier le template (si disponible)
 cp .env.example .env
-
-# Ou créer manuellement
-touch .env
+# Éditer .env avec vos valeurs
 ```
 
-### 2. Configurer les variables d'environnement
+Voir [docs/CONFIGURATION.md](docs/CONFIGURATION.md) pour un guide détaillé de toutes les variables.
 
-Éditez le fichier `.env` avec vos paramètres :
+### Configuration Minimale
 
-```bash
-# ============================================
-# Configuration LLM (choisir UNE option)
-# ============================================
+#### Option 1 : OpenAI API
 
-# Option 1 : vLLM local (nécessite GPU)
+```env
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_API_KEY=sk-your-key-here
+LLM_MODEL_NAME=gpt-4o-mini
+```
+
+#### Option 2 : vLLM Local (Recommandé pour performance)
+
+```env
 LLM_BASE_URL=http://localhost:8001/v1
-LLM_API_KEY=dummy-key
 LLM_MODEL_NAME=TheBloke/Mistral-7B-Instruct-v0.2-AWQ
+```
 
-# Option 2 : OpenAI API
-# LLM_BASE_URL=
-# LLM_API_KEY=sk-...
-# LLM_MODEL_NAME=gpt-4o-mini
+#### Option 3 : Mistral API (Legacy)
 
-# Option 3 : Mistral API (legacy)
-# MISTRAL_API_KEY=your-mistral-key
-# MISTRAL_MODEL_NAME=mistral-tiny-2407
+```env
+MISTRAL_API_KEY=your-mistral-key
+LLM_MODEL_NAME=mistral-tiny-2407
+```
 
-# ============================================
-# Configuration Qdrant
-# ============================================
+### Configuration Qdrant
+
+```env
 QDRANT_HOST=localhost
 QDRANT_PORT=6333
 QDRANT_COLLECTION_NAME=squad_collection
+```
 
-# ============================================
-# Configuration Reranker
-# ============================================
+### Configuration Reranker
+
+```env
 USE_RERANKER=true
 RERANKER_TOP_K=20
-
-# ============================================
-# Configuration Embeddings
-# ============================================
-DENSE_MODEL=sentence-transformers/all-MiniLM-L6-v2
-SPARSE_MODEL=prunebert-base-uncased-6-minilayer
-RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2
-
-# ============================================
-# Configuration Backend
-# ============================================
-BACKEND_URL=http://localhost:8000
-
-# ============================================
-# Configuration OpenTelemetry (Jaeger)
-# ============================================
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
-OTEL_SERVICE_NAME=rag-system
 ```
 
----
+## 🚀 Démarrage
 
-## 🚀 Démarrage des services
-
-### Option A : Avec Docker Compose (Recommandé)
-
-#### 1. Démarrer Qdrant + Jaeger
+### 1. Démarrer Qdrant
 
 ```bash
-# Démarrer uniquement Qdrant et Jaeger (sans vLLM si pas de GPU)
-docker-compose up -d jaeger
-
-# Démarrer Qdrant séparément (si pas dans docker-compose)
-docker run -d \
-  --name qdrant \
-  -p 6333:6333 \
-  -p 6334:6334 \
-  -v $(pwd)/qdrant_data:/qdrant/storage \
-  qdrant/qdrant:latest
+./bin/start_qdrant.sh
+# ou manuellement :
+./qdrant --config-path config/qdrant_config.yaml
 ```
 
-#### 2. Démarrer vLLM (si GPU disponible)
+Vérifier que Qdrant est accessible : http://localhost:6333/dashboard
+
+### 2. Indexer les Données (Première Utilisation)
 
 ```bash
-# Vérifier que le GPU est disponible
-nvidia-smi
-
-# Démarrer vLLM
-docker-compose up -d vllm-service
-
-# Vérifier les logs
-docker-compose logs -f vllm-service
-
-# Vérifier que vLLM est prêt
-curl http://localhost:8001/health
-```
-
-#### 3. Vérifier tous les services
-
-```bash
-# Voir l'état de tous les services
-docker-compose ps
-
-# Voir les logs de tous les services
-docker-compose logs -f
-
-# Arrêter tous les services
-docker-compose down
-
-# Arrêter et supprimer les volumes
-docker-compose down -v
-```
-
-### Option B : Services locaux (sans Docker)
-
-#### 1. Qdrant local
-
-```bash
-# Télécharger et lancer Qdrant
-docker run -d \
-  --name qdrant \
-  -p 6333:6333 \
-  -p 6334:6334 \
-  -v $(pwd)/qdrant_data:/qdrant/storage \
-  qdrant/qdrant:latest
-```
-
-#### 2. vLLM local (si GPU disponible)
-
-```bash
-# Installer vLLM
-pip install vllm
-
-# Lancer le serveur vLLM
-python -m vllm.entrypoints.openai.api_server \
-  --model TheBloke/Mistral-7B-Instruct-v0.2-AWQ \
-  --quantization awq \
-  --dtype float16 \
-  --port 8000 \
-  --host 0.0.0.0
-```
-
-#### 3. Jaeger local
-
-```bash
-# Lancer Jaeger
-docker run -d \
-  --name jaeger \
-  -p 16686:16686 \
-  -p 4317:4317 \
-  -p 4318:4318 \
-  -e COLLECTOR_OTLP_ENABLED=true \
-  jaegertracing/all-in-one:latest
-```
-
-### Option C : Google Colab (sans GPU local)
-
-Voir le notebook `colab_vllm_setup.ipynb` pour utiliser vLLM sur Colab.
-
----
-
-## 📊 Migration des données
-
-### 1. Préparer les données SQuAD
-
-```bash
-# Télécharger SQuAD 2.0 (si nécessaire)
-# Les données doivent être dans squad_2.0/train.csv
-# Format attendu : question,context,answer
-```
-
-### 2. Migrer vers Qdrant
-
-```bash
-# Lancer le script de migration
 python scripts/migrate_to_qdrant.py
-
-# Le script va :
-# - Charger les données depuis squad_2.0/train.csv
-# - Générer les embeddings hybrides (dense + sparse)
-# - Indexer dans Qdrant
 ```
 
-### 3. Vérifier la migration
+Cette étape peut prendre 10-30 minutes selon la taille du dataset.
+
+### 3. Démarrer le Backend FastAPI
 
 ```bash
-# Vérifier via l'API Qdrant
-curl http://localhost:6333/collections/squad_collection
-
-# Ou via le dashboard Qdrant
-open http://localhost:6333/dashboard
-```
-
----
-
-## 🎯 Lancement de l'application
-
-### 1. Backend FastAPI
-
-```bash
-# Activer l'environnement virtuel
-source venv/bin/activate  # Linux/Mac
-# ou
-venv\Scripts\activate  # Windows
-
-# Lancer le serveur de développement
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-
-# Ou en production
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
 ```
 
-**Endpoints disponibles** :
-- API : http://localhost:8000
-- Docs : http://localhost:8000/docs
-- Health : http://localhost:8000/health
+L'API sera accessible sur : http://localhost:8000
 
-### 2. Frontend Streamlit
+Documentation Swagger : http://localhost:8000/docs
+
+### 4. Démarrer le Frontend Streamlit
+
+Dans un nouveau terminal :
 
 ```bash
-# Dans un nouveau terminal
-source venv/bin/activate
-
-# Lancer Streamlit
 streamlit run frontend/app.py --server.port 8501
-
-# Ou avec configuration personnalisée
-streamlit run frontend/app.py \
-  --server.port 8501 \
-  --server.address 0.0.0.0
 ```
 
-**Interface** : http://localhost:8501
+L'interface sera accessible sur : http://localhost:8501
 
-### 3. Vérifier que tout fonctionne
+### 5. (Optionnel) Démarrer vLLM avec Docker
+
+Si vous utilisez vLLM local :
 
 ```bash
-# Test de l'endpoint /health
-curl http://localhost:8000/health
+docker-compose up -d vllm-service
+```
 
-# Test de l'endpoint /chat
-curl -X POST http://localhost:8000/chat \
+Vérifier les logs :
+```bash
+docker-compose logs -f vllm-service
+```
+
+### 6. (Optionnel) Démarrer Jaeger pour l'Observabilité
+
+```bash
+docker-compose up -d jaeger
+```
+
+Jaeger UI : http://localhost:16686
+
+**Note** : Si Docker n'est pas disponible, définir `ENABLE_JAEGER_EXPORT=false` dans `.env`.
+
+## 💻 Utilisation
+
+### Interface Web (Streamlit)
+
+1. Ouvrir http://localhost:8501
+2. Saisir une question dans le champ de recherche
+3. Sélectionner la langue de réponse
+4. (Optionnel) Activer/désactiver le reranker
+5. Cliquer sur "Rechercher"
+
+### API REST
+
+#### Endpoint : `/chat`
+
+```bash
+curl -X POST "http://localhost:8000/chat" \
   -H "Content-Type: application/json" \
   -d '{
     "query": "What is the capital of France?",
     "k": 5,
-    "language": "en"
-  }'
-```
-
----
-
-## 🧪 Tests et évaluation
-
-### 1. Évaluation du système de retrieval
-
-```bash
-# Lancer l'évaluation Recall@5
-python scripts/evaluate_retrieval.py
-
-# Le script va :
-# - Charger 50 questions aléatoires de SQuAD
-# - Tester avec et sans reranker
-# - Calculer Recall@5 et latence
-# - Afficher les résultats
-```
-
-### 2. Tests manuels
-
-```bash
-# Test avec curl
-curl -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "Who invented the telephone?",
-    "k": 5,
-    "language": "fr",
+    "language": "en",
     "use_reranker": true
   }'
-
-# Test avec Python
-python -c "
-import requests
-response = requests.post('http://localhost:8000/chat', json={
-    'query': 'What is photosynthesis?',
-    'k': 5,
-    'language': 'en'
-})
-print(response.json())
-"
 ```
 
-### 3. Visualiser les traces Jaeger
+#### Endpoint : `/health`
 
 ```bash
-# Ouvrir Jaeger UI
-open http://localhost:16686
-
-# Rechercher les traces du service "rag-system"
-# Filtrer par opération : rag.request, rag.retrieval, llm.generation
-```
-
----
-
-## 🚢 Déploiement
-
-### Option A : Kubernetes
-
-```bash
-# Créer le namespace
-kubectl create namespace rag-system
-
-# Déployer vLLM (nécessite GPU)
-kubectl apply -f k8s/vllm.yaml -n rag-system
-
-# Déployer le backend
-kubectl apply -f k8s/backend.yaml -n rag-system
-
-# Déployer l'ingress
-kubectl apply -f k8s/ingress.yaml -n rag-system
-
-# Vérifier le déploiement
-kubectl get pods -n rag-system
-kubectl get services -n rag-system
-```
-
-### Option B : Docker Compose (Production)
-
-```bash
-# Lancer tous les services
-docker-compose up -d
-
-# Vérifier les logs
-docker-compose logs -f
-
-# Redémarrer un service
-docker-compose restart backend
-
-# Mettre à jour et redémarrer
-docker-compose pull
-docker-compose up -d
-```
-
-### Option C : Cloud (GCP, AWS, Azure)
-
-Voir `GPU_CLOUD_GUIDE.md` pour les instructions détaillées.
-
----
-
-## 🔍 Monitoring et Observabilité
-
-### 1. Jaeger (Tracing)
-
-```bash
-# Accéder à l'UI Jaeger
-open http://localhost:16686
-
-# Rechercher les traces
-# Service: rag-system
-# Opérations: rag.request, rag.retrieval, rag.reranking, llm.generation
-```
-
-### 2. Logs
-
-```bash
-# Logs Docker Compose
-docker-compose logs -f backend
-docker-compose logs -f vllm-service
-
-# Logs Kubernetes
-kubectl logs -f deployment/rag-backend -n rag-system
-```
-
-### 3. Métriques
-
-```bash
-# Health check
 curl http://localhost:8000/health
-
-# Vérifier Qdrant
-curl http://localhost:6333/collections/squad_collection
 ```
 
----
+#### Endpoint : `/examples`
 
-## 🛠️ Troubleshooting
+```bash
+curl http://localhost:8000/examples
+```
 
-### Problème : Qdrant ne démarre pas
+### Python Client
+
+```python
+import httpx
+
+client = httpx.AsyncClient(base_url="http://localhost:8000")
+
+response = await client.post("/chat", json={
+    "query": "What is photosynthesis?",
+    "k": 5,
+    "language": "en"
+})
+
+result = response.json()
+print(result["response"])
+print(f"Documents récupérés: {len(result['retrieved_documents'])}")
+```
+
+## 📚 API Documentation
+
+La documentation complète de l'API est disponible via Swagger UI :
+
+- **Swagger UI** : http://localhost:8000/docs
+- **ReDoc** : http://localhost:8000/redoc
+
+Voir aussi [docs/API.md](docs/API.md) pour un guide détaillé (à créer).
+
+## 📊 Évaluation
+
+Le projet inclut un script d'évaluation pour mesurer les performances :
+
+```bash
+python scripts/evaluate_retrieval.py
+```
+
+Métriques calculées :
+- **Recall@5** : Rappel à 5 documents
+- **Recall@10** : Rappel à 10 documents
+- **TTFT** : Time To First Token (latence LLM)
+
+Les résultats sont sauvegardés dans `evaluation_results/`.
+
+Voir [docs/EVALUATION.md](docs/EVALUATION.md) pour plus de détails (à créer).
+
+## 🐳 Déploiement
+
+### Docker Compose
+
+Déployer tous les services :
+
+```bash
+docker-compose up -d
+```
+
+Services disponibles :
+- Backend : http://localhost:8000
+- Frontend : http://localhost:8501
+- vLLM : http://localhost:8001
+- Jaeger : http://localhost:16686
+
+### Kubernetes
+
+Les manifests Kubernetes sont dans `k8s/` :
+
+```bash
+kubectl apply -f k8s/
+```
+
+Voir [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) pour un guide complet (à créer).
+
+## 🔍 Troubleshooting
+
+### Problèmes Courants
+
+#### Qdrant ne démarre pas
 
 ```bash
 # Vérifier que le port 6333 est libre
-lsof -i :6333
+netstat -tuln | grep 6333
 
 # Vérifier les logs
-docker logs qdrant
-
-# Redémarrer Qdrant
-docker restart qdrant
+tail -f qdrant.log
 ```
 
-### Problème : vLLM ne démarre pas (GPU)
+#### Erreur CUDA/GPU
 
 ```bash
-# Vérifier que le GPU est disponible
-nvidia-smi
+# Vérifier que CUDA est installé
+python -c "import torch; print(torch.cuda.is_available())"
 
-# Vérifier Docker GPU
-docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi
-
-# Vérifier les logs vLLM
-docker-compose logs vllm-service
-
-# Utiliser une API externe à la place
-# Modifier .env : LLM_BASE_URL= et LLM_API_KEY=sk-...
+# Si pas de GPU, les modèles utiliseront CPU automatiquement
 ```
 
-### Problème : Backend ne se connecte pas à Qdrant
+#### Erreur de connexion à l'API LLM
+
+- Vérifier `LLM_BASE_URL` et `LLM_API_KEY` dans `.env`
+- Pour vLLM local, vérifier que le service est démarré : `curl http://localhost:8001/health`
+- Pour OpenAI/Mistral, vérifier la validité de la clé API
+
+#### Collection Qdrant vide
 
 ```bash
-# Vérifier que Qdrant est accessible
-curl http://localhost:6333/collections
-
-# Vérifier la configuration dans .env
-cat .env | grep QDRANT
-
-# Tester la connexion manuellement
-python -c "
-from qdrant_client import QdrantClient
-client = QdrantClient(host='localhost', port=6333)
-print(client.get_collections())
-"
-```
-
-### Problème : Erreur "Services not loaded"
-
-```bash
-# Vérifier les logs du backend
-docker-compose logs backend
-# ou
-tail -f logs/app.log
-
-# Vérifier que Qdrant est démarré
-docker ps | grep qdrant
-
-# Redémarrer le backend
-docker-compose restart backend
-```
-
-### Problème : Modèles trop lents à charger
-
-```bash
-# Les modèles sont téléchargés au premier lancement
-# Vérifier l'espace disque
-df -h
-
-# Vérifier le cache HuggingFace
-ls -lh ~/.cache/huggingface/
-
-# Nettoyer le cache si nécessaire
-rm -rf ~/.cache/huggingface/transformers/
-```
-
-### Problème : Port déjà utilisé
-
-```bash
-# Trouver le processus utilisant le port
-lsof -i :8000  # Backend
-lsof -i :6333  # Qdrant
-lsof -i :8001  # vLLM
-lsof -i :16686 # Jaeger
-
-# Tuer le processus
-kill -9 <PID>
-
-# Ou changer le port dans .env ou docker-compose.yml
-```
-
----
-
-## 📚 Commandes utiles
-
-### Docker
-
-```bash
-# Voir tous les conteneurs
-docker ps -a
-
-# Voir les images
-docker images
-
-# Nettoyer les conteneurs arrêtés
-docker container prune
-
-# Nettoyer les images non utilisées
-docker image prune -a
-
-# Voir l'utilisation des ressources
-docker stats
-```
-
-### Python
-
-```bash
-# Vérifier les dépendances
-pip list
-
-# Mettre à jour une dépendance
-pip install --upgrade <package>
-
-# Vérifier les conflits
-pip check
-
-# Créer un requirements.txt à jour
-pip freeze > requirements.txt
-```
-
-### Qdrant
-
-```bash
-# Lister les collections
-curl http://localhost:6333/collections
-
-# Voir les stats d'une collection
-curl http://localhost:6333/collections/squad_collection
-
-# Supprimer une collection
-curl -X DELETE http://localhost:6333/collections/squad_collection
-```
-
-### vLLM
-
-```bash
-# Vérifier la santé
-curl http://localhost:8001/health
-
-# Lister les modèles disponibles
-curl http://localhost:8001/v1/models
-
-# Test de génération
-curl http://localhost:8001/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "TheBloke/Mistral-7B-Instruct-v0.2-AWQ",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'
-```
-
----
-
-## 📖 Documentation supplémentaire
-
-- **Architecture** : `README_ARCHITECTURE.md`
-- **Qdrant** : `README_QDRANT.md`
-- **vLLM** : `README_VLLM.md`
-- **Ops** : `README_OPS.md`
-- **GPU Cloud** : `GPU_CLOUD_GUIDE.md`
-
----
-
-## 🎯 Workflow complet (Quick Start)
-
-```bash
-# 1. Installation
-git clone <repo> && cd rag_LLM
-python -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-
-# 2. Configuration
-cp .env.example .env
-# Éditer .env avec vos clés API
-
-# 3. Démarrer les services
-docker-compose up -d qdrant jaeger
-# Si GPU : docker-compose up -d vllm-service
-
-# 4. Migrer les données
+# Réindexer les données
 python scripts/migrate_to_qdrant.py
-
-# 5. Lancer le backend
-uvicorn app.main:app --reload
-
-# 6. Lancer le frontend (nouveau terminal)
-streamlit run frontend/app.py
-
-# 7. Tester
-open http://localhost:8501
 ```
 
----
+### Logs et Debugging
 
-## 🆘 Support
+#### Backend
 
-Pour toute question ou problème :
-1. Vérifier les logs : `docker-compose logs -f`
-2. Vérifier la configuration : `cat .env`
-3. Consulter la documentation dans les README_*.md
-4. Vérifier les issues GitHub
+```bash
+# Mode debug
+uvicorn app.main:app --reload --log-level debug
+```
 
----
+#### Frontend
 
-## 📝 Notes importantes
+```bash
+# Mode debug
+streamlit run frontend/app.py --logger.level=debug
+```
 
-- **GPU requis** : vLLM local nécessite un GPU NVIDIA. Utilisez une API externe ou Colab sinon.
-- **Mémoire** : Les modèles nécessitent ~8GB RAM minimum.
-- **Premier lancement** : Les modèles sont téléchargés automatiquement (peut prendre du temps).
-- **Production** : Utiliser `--workers` avec uvicorn et configurer les timeouts.
+#### OpenTelemetry
 
----
+Si Jaeger n'est pas disponible, désactiver l'export :
 
-**Bon développement ! 🚀**
+```env
+ENABLE_JAEGER_EXPORT=false
+```
+
+Voir [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) pour plus de solutions.
+
+## 📖 Documentation Additionnelle
+
+- [Configuration Détaillée](docs/CONFIGURATION.md) : Guide complet des variables d'environnement
+- [Architecture](docs/ARCHITECTURE.md) : Documentation technique approfondie
+- [API Reference](docs/API.md) : Documentation complète de l'API
+- [Déploiement](docs/DEPLOYMENT.md) : Guide de déploiement production
+- [Évaluation](docs/EVALUATION.md) : Guide d'évaluation des performances
+- [Troubleshooting](docs/TROUBLESHOOTING.md) : Guide de résolution de problèmes
+- [Contributing](CONTRIBUTING.md) : Guide de contribution au projet
+
+## 🤝 Contribution
+
+Les contributions sont les bienvenues ! Voir [CONTRIBUTING.md](CONTRIBUTING.md) pour les guidelines.
+
+## 📚 Exemples
+
+Des exemples d'utilisation sont disponibles dans le répertoire `examples/` :
+
+- [simple_query.py](examples/simple_query.py) : Exemple basique
+- [batch_queries.py](examples/batch_queries.py) : Traitement par batch
+- [custom_integration.py](examples/custom_integration.py) : Intégration personnalisée
+
+Voir [examples/README.md](examples/README.md) pour plus de détails.
+
+## 📝 Licence
+
+Ce projet est sous licence **MIT**.  
+
+## 👥 Auteurs
+
+**Gabriel Marie Brisson** – <gabriel@mariebrisson.fr>
+
+
+## 🙏 Remerciements
+
+- [SQuAD Dataset](https://rajpurkar.github.io/SQuAD-explorer/)
+- [Qdrant](https://qdrant.tech/)
+- [vLLM](https://github.com/vllm-project/vllm)
+- [FastAPI](https://fastapi.tiangolo.com/)
+- [Streamlit](https://streamlit.io/)
 

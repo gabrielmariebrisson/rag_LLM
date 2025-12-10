@@ -1,0 +1,21 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Installer Streamlit et dépendances
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir streamlit httpx pandas plotly python-dotenv
+
+# Copier le frontend
+COPY frontend/ ./frontend/
+COPY templates/ ./templates/
+
+# Variables d'environnement
+ENV PYTHONUNBUFFERED=1
+
+# Port
+EXPOSE 8501
+
+# Commande
+CMD ["streamlit", "run", "frontend/app.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
+

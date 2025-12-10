@@ -1,25 +1,70 @@
-# Ignorer tous les fichiers .DS_Store
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 .DS_Store
-**/.DS_Store
 
+# Environnement
+.env
+.env.local
 
-# Ignorer les fichiers de logs
+# Tests
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# Logs
+logs/
 *.log
 
-# Ignorer les fichiers Python compilés
-*.pyc
-*.pyo
-__pycache__/
+# Données (optionnel - ne pas versionner les données volumineuses)
+data/processed/qdrant_data/
+data/snapshots/
+*.faiss
+*.pkl
 
-# Ignorer les environnements virtuels
-venv/
-.env
+# Qdrant runtime
+qdrant
+qdrant.log
 
-# Ignorer les fichiers de configuration IDE
-.idea/
-.vscode/
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
 
-squad_2.0/*
+# Docker
+.dockerignore
 
 
-qdrant_data/*
+.qdrant-initialized
