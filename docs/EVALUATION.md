@@ -423,7 +423,7 @@ plt.savefig('data/results/evaluation_results/recall_comparison.png')
 
 ```env
 # Modèle dense plus performant (SOTA)
-DENSE_MODEL=BAAI/bge-m3
+DENSE_MODEL=BAAI/bge-large-en-v1.5
 
 # Modèle reranker plus performant (SOTA)
 RERANKER_MODEL=BAAI/bge-reranker-v2-m3

@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     FAISS_INDEX_DIR: str = "faiss_index"
     
     # Embedding Model (legacy)
-    EMBEDDING_MODEL_NAME: str = "BAAI/bge-m3"
+    EMBEDDING_MODEL_NAME: str = "BAAI/bge-large-en-v1.5"
     
     # Qdrant Configuration
     QDRANT_HOST: str = "localhost"
@@ -68,8 +68,8 @@ class Settings(BaseSettings):
     RERANKER_TOP_K: int = 100  # Nombre de docs avant reranking
     
     # Embedding Models
-    DENSE_MODEL: str = "BAAI/bge-m3"
-    SPARSE_MODEL: str = "prithivida/Splade_pp_en_v1"  # Modèle SPLADE pour embeddings sparse
+    DENSE_MODEL: str = "BAAI/bge-large-en-v1.5"
+    SPARSE_MODEL: str = "prithivida/Splade_PP_en_v1"  # Modèle SPLADE pour embeddings sparse (nom correct avec "i")
     RERANKER_MODEL: str = "BAAI/bge-reranker-v2-m3"
     
     # Embedding Dimensions

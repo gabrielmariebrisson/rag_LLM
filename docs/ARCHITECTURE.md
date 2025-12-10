@@ -236,7 +236,7 @@ Requête Utilisateur
 ┌───────────────────┐
 │  1. Embedding     │  Génération embeddings hybrides (dense + sparse)
 │     Query         │  - Dense: fastembed (BGE-M3, 1024 dimensions)
-└────────┬──────────┘  - Sparse: fastembed SPLADE (prithivida/Splade_pp_en_v1)
+└────────┬──────────┘  - Sparse: fastembed SPLADE (prithivida/Splade_PP_en_v1)
          │
          ▼
 ┌───────────────────┐
@@ -385,8 +385,8 @@ Question: {query}"
 **Responsabilité** : Génération d'embeddings hybrides (dense + sparse)
 
 **Modèles** :
-- **Dense** : fastembed (BAAI/bge-m3 par défaut, 1024 dimensions)
-- **Sparse** : fastembed (prithivida/Splade_pp_en_v1 par défaut)
+- **Dense** : fastembed (BAAI/bge-large-en-v1.5 par défaut, 1024 dimensions)
+- **Sparse** : fastembed (prithivida/Splade_PP_en_v1 par défaut)
 
 **Méthodes** :
 - `embed_hybrid(texts: List[str]) -> Tuple[List[np.ndarray], List[dict]]`

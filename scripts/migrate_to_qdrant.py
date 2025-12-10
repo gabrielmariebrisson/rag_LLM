@@ -37,7 +37,7 @@ def create_sentence_windows(text: str, window_size: int = 3) -> List[str]:
             windows.append(" ".join(window))
     return windows
 
-async def migrate_csv_to_qdrant(csv_path: str, batch_size: int = 64):
+async def migrate_csv_to_qdrant(csv_path: str, batch_size: int = 32):
     load_dotenv()
     config = Settings()
     

@@ -1,4 +1,4 @@
-"""Script pour convertir SQuAD 2.0 JSON en CSV."""
+"""Script pour convertir SQuAD 2.0 JSON en CSV ou utiliser les CSV existants."""
 import json
 import pandas as pd
 import sys
@@ -67,19 +67,86 @@ def convert_squad_json_to_csv(json_path: str, csv_path: str):
     return df
 
 
+def convert_existing_csv_to_format(csv_input_path: str, csv_output_path: str):
+    """
+    Convertit les fichiers CSV existants (train-squad.csv, validation-squad.csv) 
+    au format attendu par le système.
+    
+    Args:
+        csv_input_path: Chemin vers le CSV existant
+        csv_output_path: Chemin de sortie pour le CSV formaté
+    """
+    print(f"📖 Lecture du fichier CSV existant: {csv_input_path}")
+    df = pd.read_csv(csv_input_path)
+    
+    print(f"✅ Fichier CSV chargé: {len(df)} lignes")
+    print(f"📊 Colonnes: {list(df.columns)}")
+    
+    # Vérifier les colonnes disponibles
+    required_cols = ['context', 'question', 'id']
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    
+    if missing_cols:
+        print(f"❌ Colonnes manquantes: {missing_cols}")
+        return None
+    
+    # Créer le DataFrame au format attendu
+    # Les CSV existants ont: context, question, id, answer_start, text
+    # Le format attendu est: id, title, question, context, answers
+    
+    result_df = pd.DataFrame({
+        'id': df['id'],
+        'title': '',  # Pas de titre dans les CSV existants
+        'question': df['question'],
+        'context': df['context'],
+        'answers': df.get('text', '').apply(lambda x: f"['{x}']" if pd.notna(x) and x else '')
+    })
+    
+    # Sauvegarder en CSV
+    print(f"💾 Sauvegarde du CSV formaté: {csv_output_path}")
+    result_df.to_csv(csv_output_path, index=False, encoding='utf-8')
+    
+    print(f"✅ Conversion terminée: {len(result_df)} lignes créées")
+    print(f"📊 Aperçu:")
+    print(result_df.head())
+    
+    return result_df
+
+
 if __name__ == "__main__":
-    json_path = str(DATA_RAW / "squad_2.0" / "train-v2.0.json")
-    csv_path = str(DATA_RAW / "squad_2.0" / "train.csv")
+    squad_dir = DATA_RAW / "squad_2.0"
+    json_path = str(squad_dir / "train-v2.0.json")
+    csv_path = str(squad_dir / "train.csv")
     
-    if not os.path.exists(json_path):
-        print(f"❌ Fichier JSON introuvable: {json_path}")
-        print("💡 Téléchargez d'abord le fichier depuis https://rajpurkar.github.io/SQuAD-explorer/dataset/train-v2.0.json")
-        print(f"💡 Placez-le dans: {DATA_RAW / 'squad_2.0'}")
+    # Vérifier d'abord si les CSV existants sont disponibles
+    existing_csv_train = str(squad_dir / "train-squad.csv")
+    existing_csv_val = str(squad_dir / "validation-squad.csv")
+    
+    if os.path.exists(existing_csv_train):
+        print("=" * 60)
+        print("Conversion SQuAD 2.0 CSV existant -> Format attendu")
+        print("=" * 60)
+        convert_existing_csv_to_format(existing_csv_train, csv_path)
+        
+        # Convertir aussi le fichier de validation si disponible
+        if os.path.exists(existing_csv_val):
+            val_csv_path = str(squad_dir / "validation.csv")
+            print("\n" + "=" * 60)
+            print("Conversion du fichier de validation")
+            print("=" * 60)
+            convert_existing_csv_to_format(existing_csv_val, val_csv_path)
+    elif os.path.exists(json_path):
+        print("=" * 60)
+        print("Conversion SQuAD 2.0 JSON -> CSV")
+        print("=" * 60)
+        convert_squad_json_to_csv(json_path, csv_path)
+    else:
+        print(f"❌ Aucun fichier source trouvé!")
+        print(f"💡 Options disponibles:")
+        print(f"   1. Télécharger les CSV depuis Kaggle et les placer dans: {squad_dir}")
+        print(f"      - train-squad.csv")
+        print(f"      - validation-squad.csv")
+        print(f"   2. Télécharger le JSON depuis https://rajpurkar.github.io/SQuAD-explorer/dataset/train-v2.0.json")
+        print(f"      et le placer dans: {squad_dir}")
         sys.exit(1)
-    
-    print("=" * 60)
-    print("Conversion SQuAD 2.0 JSON -> CSV")
-    print("=" * 60)
-    
-    convert_squad_json_to_csv(json_path, csv_path)
 

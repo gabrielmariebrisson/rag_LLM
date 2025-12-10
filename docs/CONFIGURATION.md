@@ -241,20 +241,20 @@ await vectorstore.initialize_collection(dense_dim=settings.DENSE_DIM)  # Utilise
 
 **Variable** : `DENSE_MODEL`
 
-**Valeur par défaut** : `BAAI/bge-m3`
+**Valeur par défaut** : `BAAI/bge-large-en-v1.5`
 
 **Modèles Recommandés** :
 
 | Modèle | Dimensions | Qualité | Vitesse | RAM Requise |
 |--------|-----------|---------|---------|-------------|
-| `BAAI/bge-m3` | 1024 | ⭐⭐⭐⭐⭐ | ⚡⚡⚡ | 2GB |
+| `BAAI/bge-large-en-v1.5` | 1024 | ⭐⭐⭐⭐⭐ | ⚡⚡⚡ | 2GB |
 | `BAAI/bge-large-en-v1.5` | 1024 | ⭐⭐⭐⭐⭐ | ⚡⚡ | 3GB |
 | `BAAI/bge-base-en-v1.5` | 768 | ⭐⭐⭐⭐ | ⚡⚡⚡ | 1.5GB |
 
 **Exemple** :
 
 ```env
-DENSE_MODEL=BAAI/bge-m3
+DENSE_MODEL=BAAI/bge-large-en-v1.5
 ```
 
 **Notes** :
@@ -267,7 +267,7 @@ DENSE_MODEL=BAAI/bge-m3
 
 **Variable** : `SPARSE_MODEL`
 
-**Valeur par défaut** : `prithivida/Splade_pp_en_v1`
+**Valeur par défaut** : `prithivida/Splade_PP_en_v1`
 
 **Fonction** : Génère des embeddings sparse (SPLADE) pour la recherche hybride via `fastembed.SparseTextEmbedding`.
 
@@ -280,7 +280,7 @@ DENSE_MODEL=BAAI/bge-m3
 **Exemple** :
 
 ```env
-SPARSE_MODEL=prithivida/Splade_pp_en_v1
+SPARSE_MODEL=prithivida/Splade_PP_en_v1
 ```
 
 ---
@@ -447,7 +447,7 @@ python -c "import torch; print(f'CUDA disponible: {torch.cuda.is_available()}');
 
 **Variable** : `EMBEDDING_MODEL_NAME`
 
-**Valeur par défaut** : `BAAI/bge-m3`
+**Valeur par défaut** : `BAAI/bge-large-en-v1.5`
 
 **Usage** : Maintenu pour compatibilité. Utiliser `DENSE_MODEL` à la place.
 
